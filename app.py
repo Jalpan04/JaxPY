@@ -8,9 +8,9 @@ import subprocess
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QSplitter, QTextEdit, QPlainTextEdit, QPushButton, QToolBar,
                              QAction, QFileDialog, QShortcut, QLabel, QSizePolicy, QMessageBox, QInputDialog)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRegExp
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRegExp, QSize
 from PyQt5.QtGui import (QColor, QTextCharFormat, QFont, QPalette, QSyntaxHighlighter,
-                         QTextCursor, QKeySequence, QIcon)
+                         QTextCursor, QKeySequence, QIcon, QPainter, QTextFormat)
 
 
 class PythonHighlighter(QSyntaxHighlighter):
@@ -88,30 +88,105 @@ class PythonHighlighter(QSyntaxHighlighter):
 
 
 class CodeEditor(QPlainTextEdit):
-    """
-    Custom code editor with line numbers and syntax highlighting.
-    """
-
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.line_number_area = LineNumberArea(self)
         self.setup_editor()
         self.highlighter = PythonHighlighter(self.document())
 
+        # Connect signals
+        self.blockCountChanged.connect(self.update_line_number_area_width)
+        self.updateRequest.connect(self.update_line_number_area)
+        self.cursorPositionChanged.connect(self.highlight_current_line)
+
+        self.update_line_number_area_width()
+
     def setup_editor(self):
-        # Set up appearance
         font = QFont("Consolas", 10)
         font.setFixedPitch(True)
         self.setFont(font)
+        self.setTabStopWidth(4 * self.fontMetrics().width(' '))
 
-        # Set a dark background and text color
         palette = QPalette()
         palette.setColor(QPalette.Base, QColor("#1E1E1E"))
         palette.setColor(QPalette.Text, QColor("#D4D4D4"))
         self.setPalette(palette)
 
-        # Tab settings
-        self.setTabStopWidth(4 * self.fontMetrics().width(' '))
+    def line_number_area_width(self):
+        digits = len(str(self.blockCount()))
+        space = 12  # Add extra space for padding
+        return 10 + self.fontMetrics().width('9') * digits + space
 
+    def update_line_number_area_width(self):
+        self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        rect = self.contentsRect()
+        self.line_number_area.setGeometry(rect.left(), rect.top(), self.line_number_area_width(), rect.height())
+
+    def line_number_area_paint_event(self, event):
+        painter = QPainter(self.line_number_area)
+
+        # Background color for line numbers
+        painter.fillRect(event.rect(), QColor("#262626"))
+
+        block = self.firstVisibleBlock()
+        block_number = block.blockNumber()
+        top = self.blockBoundingGeometry(block).translated(self.contentOffset()).top()
+        bottom = top + self.blockBoundingRect(block).height()
+
+        # Define spacing (increase to add more space)
+        padding_right = 10  # Extra space between line numbers and code
+
+        while block.isValid() and top <= event.rect().bottom():
+            if block.isVisible() and bottom >= event.rect().top():
+                number = str(block_number + 1)
+
+                # Text color for line numbers
+                painter.setPen(QColor("#FFFFFF"))
+
+                # Draw line number with extra spacing
+                painter.drawText(0, int(top), self.line_number_area.width() - padding_right,
+                                 self.fontMetrics().height(), Qt.AlignRight, number)
+
+            block = block.next()
+            top = bottom
+            bottom = top + self.blockBoundingRect(block).height()
+            block_number += 1
+
+    def update_line_number_area(self, rect, dy):
+        if dy:
+            self.line_number_area.scroll(0, dy)
+        else:
+            self.line_number_area.update(0, rect.y(), self.line_number_area.width(), rect.height())
+
+        if rect.contains(self.viewport().rect()):
+            self.update_line_number_area_width()
+
+    def highlight_current_line(self):
+        extra_selections = []
+
+        if not self.isReadOnly():
+            selection = QTextEdit.ExtraSelection()
+            selection.format.setBackground(QColor("#2A2D2E"))
+            selection.format.setProperty(QTextFormat.FullWidthSelection, True)
+            selection.cursor = self.textCursor()
+            selection.cursor.clearSelection()
+            extra_selections.append(selection)
+
+        self.setExtraSelections(extra_selections)
+
+class LineNumberArea(QWidget):
+    def __init__(self, editor):
+        super().__init__(editor)
+        self.code_editor = editor
+
+    def sizeHint(self):
+        return QSize(self.code_editor.line_number_area_width(), 0)
+
+    def paintEvent(self, event):
+        self.code_editor.line_number_area_paint_event(event)
 
 class ConsoleWidget(QTextEdit):
     """
