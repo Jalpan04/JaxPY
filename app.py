@@ -1,17 +1,18 @@
-import sys
-import io
-import traceback
-import keyword
 import builtins
+import io
+import keyword
 import re
 import subprocess
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                             QSplitter, QTextEdit, QPlainTextEdit, QPushButton, QToolBar,
-                             QAction, QFileDialog, QShortcut, QLabel, QDialog, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QLabel
-, QMessageBox, QInputDialog)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRegExp, QSize
+import sys
+import traceback
+
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRegExp, QSize, QTimer
 from PyQt5.QtGui import (QColor, QTextCharFormat, QFont, QPalette, QSyntaxHighlighter,
-                         QTextCursor, QKeySequence, QIcon, QPainter, QTextFormat)
+                         QTextCursor, QIcon, QPainter, QTextFormat)
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout,
+                             QSplitter, QTextEdit, QPlainTextEdit, QFileDialog, QDialog, QVBoxLayout, QLineEdit,
+                             QListWidget, QListWidgetItem, QPushButton, QLabel
+, QMessageBox, QInputDialog)
 
 
 class PythonHighlighter(QSyntaxHighlighter):
@@ -86,7 +87,6 @@ class PythonHighlighter(QSyntaxHighlighter):
                 length = expression.matchedLength()
                 self.setFormat(index, length, format)
                 index = expression.indexIn(text, index + length)
-
 
 class CodeEditor(QPlainTextEdit):
     def __init__(self, parent=None):
@@ -411,7 +411,9 @@ class PythonIDE(QMainWindow):
 
     def init_ui(self):
         # Set up the main window
-        self.setWindowTitle("TezPy")
+        self.setWindowTitle("JaxPY")
+        self.setWindowIcon(QIcon("JaxPY.ico"))  # Set the window icon
+
         self.setGeometry(100, 100, 1000, 800)
 
         # Create central widget and main layout
@@ -424,6 +426,8 @@ class PythonIDE(QMainWindow):
 
         # Create code editor
         self.code_editor = CodeEditor()
+        self.code_editor.textChanged.connect(self.mark_unsaved)
+
         splitter.addWidget(self.code_editor)
 
         # Create console widget
@@ -434,9 +438,23 @@ class PythonIDE(QMainWindow):
         console_header = QHBoxLayout()
         console_label = QLabel("Terminal")
         console_label.setStyleSheet("color: #CCCCCC; background-color: #2D2D2D; padding: 3px;")
+        # Save Status Dot
+        self.save_status_dot = QLabel("●")  # Small dot
+        self.save_status_dot.setStyleSheet(
+            "color: red; background-color: #2D2D2D; padding: 3px;")  # Default red (unsaved)
+
         console_header.addWidget(console_label)
         console_header.addStretch()
         console_layout.addLayout(console_header)
+        console_header.addWidget(self.save_status_dot)  # Add dot to terminal header
+
+        self.current_file = None  # Track the currently opened file
+
+        # Auto-save timer setup
+        self.auto_save_timer = QTimer(self)
+        self.auto_save_timer.timeout.connect(self.auto_save)
+        self.auto_save_timer.start(30000)  # Auto-save every 30 seconds
+
 
         self.console = ConsoleWidget()
         console_layout.addWidget(self.console)
@@ -579,30 +597,52 @@ class PythonIDE(QMainWindow):
         self.code_editor.clear()
 
     def open_file(self):
-        """
-        Open a Python file.
-        """
         filename, _ = QFileDialog.getOpenFileName(self, "Open Python File", "", "Python Files (*.py);;All Files (*)")
 
         if filename:
             try:
-                with open(filename, 'r') as file:
+                with open(filename, 'r', encoding="utf-8") as file:
                     self.code_editor.setPlainText(file.read())
+                self.current_file = filename  # Track the opened file
             except Exception as e:
                 self.console.write(f"Error opening file: {str(e)}\n")
 
     def save_file(self):
-        """
-        Save the current code to a file.
-        """
-        filename, _ = QFileDialog.getSaveFileName(self, "Save Python File", "", "Python Files (*.py);;All Files (*)")
+        if not self.current_file:
+            self.current_file, _ = QFileDialog.getSaveFileName(self, "Save Python File", "",
+                                                               "Python Files (*.py);;All Files (*)")
 
-        if filename:
+        if self.current_file:
             try:
-                with open(filename, 'w') as file:
+                with open(self.current_file, 'w', encoding="utf-8") as file:
                     file.write(self.code_editor.toPlainText())
+                self.console.write(f"\n[Saved] {self.current_file}\n")
             except Exception as e:
-                self.console.write(f"Error saving file: {str(e)}\n")
+                self.console.write(f"\n[Save Failed] {str(e)}\n")
+
+    def mark_unsaved(self):
+        """
+        Marks the file as unsaved (red dot) when text is changed.
+        """
+        self.save_status_dot.setStyleSheet("color: red; background-color: #2D2D2D; padding: 3px;")
+
+    def auto_save(self):
+        """
+        Automatically saves the file every 30 seconds.
+        If a file is opened, it saves to that file.
+        Otherwise, it saves to a temporary file.
+        """
+        save_path = self.current_file if self.current_file else "autosave.py"
+
+        try:
+            with open(save_path, "w", encoding="utf-8") as file:
+                file.write(self.code_editor.toPlainText())
+
+            # Update the save status to green (saved)
+            self.save_status_dot.setStyleSheet("color: green; background-color: #2D2D2D; padding: 3px;")
+
+        except Exception as e:
+            self.console.write(f"\n[Auto-Save Failed] {str(e)}\n")
 
     def find_and_replace(self):
         """
@@ -809,8 +849,6 @@ class PythonIDE(QMainWindow):
 
         if ok and package_name:
             self.install_package(package_name)
-
-    from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QLabel
 
     def show_installed_packages(self):
         """
