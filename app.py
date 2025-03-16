@@ -483,12 +483,15 @@ class PythonIDE(QMainWindow):
         new_action = create_action("New", None, self.new_file)
         open_action = create_action("Open", None, self.open_file)
         save_action = create_action("Save", None, self.save_file)
+        find_replace_action = create_action("Find / Replace", "Ctrl+F", self.find_and_replace)
+
 
         # Add actions to toolbar
         toolbar.addAction(run_action)
         toolbar.addAction(new_action)
         toolbar.addAction(open_action)
         toolbar.addAction(save_action)
+        toolbar.addAction(find_replace_action)
 
         # Create Packages button
         packages_button = QToolButton(self)
@@ -600,6 +603,184 @@ class PythonIDE(QMainWindow):
                     file.write(self.code_editor.toPlainText())
             except Exception as e:
                 self.console.write(f"Error saving file: {str(e)}\n")
+
+    def find_and_replace(self):
+        """
+        Opens a Find and Replace dialog with match count and navigation buttons beside it.
+        """
+        self.match_positions = []
+        self.current_match_index = -1  # No match initially
+
+        self.find_replace_dialog = QDialog(self)  # Store dialog reference
+        self.find_replace_dialog.setWindowTitle("Find and Replace")
+        self.find_replace_dialog.setGeometry(300, 300, 350, 150)
+        layout = QVBoxLayout(self.find_replace_dialog)
+
+        # Find input layout
+        find_label = QLabel("Find:")
+        self.find_input = QLineEdit()
+
+        # Replace input layout
+        replace_label = QLabel("Replace:")
+        self.replace_input = QLineEdit()
+
+        # Match count + navigation layout
+        match_layout = QHBoxLayout()
+        self.match_label = QLabel("Matches: 0")  # Label to show match count
+
+        prev_button = QPushButton("◀")  # Previous match button
+        next_button = QPushButton("▶")  # Next match button
+
+        prev_button.setFixedSize(30, 30)
+        next_button.setFixedSize(30, 30)
+
+        match_layout.addWidget(self.match_label)
+        match_layout.addWidget(prev_button)
+        match_layout.addWidget(next_button)
+
+        # Buttons layout
+        find_button = QPushButton("Find")
+        replace_button = QPushButton("Replace")
+        replace_all_button = QPushButton("Replace All")
+
+        find_button.clicked.connect(self.find_text)
+        next_button.clicked.connect(self.next_match)
+        prev_button.clicked.connect(self.prev_match)
+        replace_button.clicked.connect(self.replace_text)
+        replace_all_button.clicked.connect(self.replace_all_text)
+
+        # Add widgets to layout
+        layout.addWidget(find_label)
+        layout.addWidget(self.find_input)
+        layout.addWidget(replace_label)
+        layout.addWidget(self.replace_input)
+        layout.addLayout(match_layout)  # Matches count + buttons
+        layout.addWidget(find_button)
+        layout.addWidget(replace_button)
+        layout.addWidget(replace_all_button)
+
+        self.find_replace_dialog.setLayout(layout)
+        self.find_replace_dialog.exec_()  # Show dialog
+
+    def find_text(self):
+        """
+        Finds all occurrences of the search term, highlights the first match, and auto-closes if no matches are found.
+        """
+        search_text = self.find_input.text().strip()
+        if not search_text:
+            return
+
+        document = self.code_editor.document()
+        cursor = QTextCursor(document)
+
+        self.match_positions = []
+        self.current_match_index = -1
+
+        regex = QRegExp(r'\b' + re.escape(search_text) + r'\b')
+
+        # Find all matches
+        while not cursor.isNull() and not cursor.atEnd():
+            cursor = document.find(regex, cursor)
+            if cursor.isNull():
+                break
+            self.match_positions.append(cursor.position())
+
+        # Update match count
+        match_count = len(self.match_positions)
+        self.match_label.setText(f"Matches: {match_count}")
+
+        if match_count > 0:
+            self.current_match_index = 0
+            self.highlight_match()
+        else:
+            # Close the Find & Replace window if no matches are found
+            if hasattr(self, "find_replace_dialog") and self.find_replace_dialog.isVisible():
+                self.find_replace_dialog.accept()  # Close the dialog
+
+    def highlight_match(self):
+        """
+        Highlights the current match.
+        """
+        if self.current_match_index == -1 or not self.match_positions:
+            return
+
+        cursor = self.code_editor.textCursor()
+        cursor.setPosition(self.match_positions[self.current_match_index] - len(self.find_input.text()))
+        cursor.movePosition(QTextCursor.Right, QTextCursor.KeepAnchor, len(self.find_input.text()))
+        self.code_editor.setTextCursor(cursor)
+
+        self.match_label.setText(f"Matches: {len(self.match_positions)} (Current: {self.current_match_index + 1})")
+
+    def next_match(self):
+        """
+        Moves to the next match.
+        """
+        if not self.match_positions:
+            return
+
+        self.current_match_index = (self.current_match_index + 1) % len(self.match_positions)
+        self.highlight_match()
+
+    def prev_match(self):
+        """
+        Moves to the previous match.
+        """
+        if not self.match_positions:
+            return
+
+        self.current_match_index = (self.current_match_index - 1) % len(self.match_positions)
+        self.highlight_match()
+
+    def replace_text(self):
+        """
+        Replaces the currently highlighted match.
+        """
+        if self.current_match_index == -1 or not self.match_positions:
+            return
+
+        search_text = self.find_input.text()
+        replace_text = self.replace_input.text()
+
+        cursor = self.code_editor.textCursor()
+        if cursor.hasSelection() and cursor.selectedText() == search_text:
+            cursor.insertText(replace_text)
+            self.match_positions[self.current_match_index] += len(replace_text) - len(search_text)
+
+        self.find_text()  # Refresh matches after replacing
+
+    def replace_all_text(self):
+        """
+        Replaces all occurrences of the searched text in the document and closes the Find & Replace window.
+        """
+        search_text = self.find_input.text().strip()
+        replace_text = self.replace_input.text().strip()
+
+        if not search_text:
+            return
+
+        document = self.code_editor.document()
+        cursor = QTextCursor(document)
+
+        cursor.beginEditBlock()
+
+        pattern = r'\b' + re.escape(search_text) + r'\b'  # Match whole words
+        regex = QRegExp(pattern)
+
+        count = 0
+        cursor.movePosition(QTextCursor.Start)  # Start from the beginning of the document
+
+        while True:
+            cursor = document.find(regex, cursor)  # Find next occurrence
+            if cursor.isNull():
+                break  # Stop if no more matches
+            cursor.insertText(replace_text)  # Replace text
+            count += 1
+
+        cursor.endEditBlock()
+
+        # Close the Find & Replace window after replacing
+        if hasattr(self, "find_replace_dialog") and self.find_replace_dialog.isVisible():
+            self.find_replace_dialog.accept()  # Closes the dialog
 
     def handle_module_error(self, module_name):
         """
