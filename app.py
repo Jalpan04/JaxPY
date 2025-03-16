@@ -449,44 +449,70 @@ class PythonIDE(QMainWindow):
         # Add splitter to main layout
         main_layout.addWidget(splitter)
 
+        from PyQt5.QtWidgets import QAction, QToolBar, QToolButton, QMenu
+        from PyQt5.QtGui import QKeySequence
+
         # Create toolbar
         toolbar = QToolBar()
         self.addToolBar(toolbar)
 
+        # Define button style
+        button_style = """
+            QToolButton, QAction {
+                background-color: #1e1e1e; 
+                color: white;
+                padding: 5px 10px;
+                border-radius: 5px;
+            }
+            QToolButton:hover, QAction:hover {
+                background-color: #3A3A3A;
+            }
+        """
+
+        # Function to create styled action
+        def create_action(name, shortcut=None, callback=None):
+            action = QAction(name, self)
+            if shortcut:
+                action.setShortcut(QKeySequence(shortcut))
+            if callback:
+                action.triggered.connect(callback)
+            return action
+
+        # Add actions to toolbar with the same style
+        run_action = create_action("Run", "F5", self.run_code)
+        new_action = create_action("New", None, self.new_file)
+        open_action = create_action("Open", None, self.open_file)
+        save_action = create_action("Save", None, self.save_file)
+
         # Add actions to toolbar
-        run_action = QAction("Run", self)
-        run_action.triggered.connect(self.run_code)
-        run_action.setShortcut(QKeySequence("F5"))
         toolbar.addAction(run_action)
-
-        # Add file operations
-        new_action = QAction("New", self)
-        new_action.triggered.connect(self.new_file)
         toolbar.addAction(new_action)
-
-        open_action = QAction("Open", self)
-        open_action.triggered.connect(self.open_file)
         toolbar.addAction(open_action)
-
-        save_action = QAction("Save", self)
-        save_action.triggered.connect(self.save_file)
         toolbar.addAction(save_action)
 
-        from PyQt5.QtWidgets import QMenu
+        # Create Packages button
+        packages_button = QToolButton(self)
+        packages_button.setText("Packages")
+        packages_button.setPopupMode(QToolButton.InstantPopup)  # Open menu on button click
+        packages_button.setStyleSheet(button_style)
 
-        # Create a dropdown menu for Packages
-        packages_menu = QMenu("Packages", self)
-        toolbar.addAction(packages_menu.menuAction())
+        # Create dropdown menu
+        packages_menu = QMenu(self)
+        packages_button.setMenu(packages_menu)  # Attach menu to the button
 
         # Install Packages Action
-        install_action = QAction("Install Packages", self)
-        install_action.triggered.connect(self.show_package_installer)
-        packages_menu.addAction(install_action)
+        install_action = create_action("Install Packages", None, self.show_package_installer)
+        installed_action = create_action("Installed Packages", None, self.show_installed_packages)
 
-        # Installed Packages Action
-        installed_action = QAction("Installed Packages", self)
-        installed_action.triggered.connect(self.show_installed_packages)
+        # Add menu actions
+        packages_menu.addAction(install_action)
         packages_menu.addAction(installed_action)
+
+        # Add the button to the toolbar
+        toolbar.addWidget(packages_button)
+
+        # Apply the style to the toolbar actions
+        toolbar.setStyleSheet(button_style)
 
         # Set default content
         self.code_editor.setPlainText(
