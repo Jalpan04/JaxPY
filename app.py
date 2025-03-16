@@ -7,7 +7,8 @@ import re
 import subprocess
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QSplitter, QTextEdit, QPlainTextEdit, QPushButton, QToolBar,
-                             QAction, QFileDialog, QShortcut, QLabel, QSizePolicy, QMessageBox, QInputDialog)
+                             QAction, QFileDialog, QShortcut, QLabel, QDialog, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QLabel
+, QMessageBox, QInputDialog)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRegExp, QSize
 from PyQt5.QtGui import (QColor, QTextCharFormat, QFont, QPalette, QSyntaxHighlighter,
                          QTextCursor, QKeySequence, QIcon, QPainter, QTextFormat)
@@ -410,7 +411,7 @@ class PythonIDE(QMainWindow):
 
     def init_ui(self):
         # Set up the main window
-        self.setWindowTitle("Python IDE with Integrated Console")
+        self.setWindowTitle("TezPy")
         self.setGeometry(100, 100, 1000, 800)
 
         # Create central widget and main layout
@@ -471,10 +472,21 @@ class PythonIDE(QMainWindow):
         save_action.triggered.connect(self.save_file)
         toolbar.addAction(save_action)
 
-        # Add install package action
-        install_action = QAction("Install Package", self)
+        from PyQt5.QtWidgets import QMenu
+
+        # Create a dropdown menu for Packages
+        packages_menu = QMenu("Packages", self)
+        toolbar.addAction(packages_menu.menuAction())
+
+        # Install Packages Action
+        install_action = QAction("Install Packages", self)
         install_action.triggered.connect(self.show_package_installer)
-        toolbar.addAction(install_action)
+        packages_menu.addAction(install_action)
+
+        # Installed Packages Action
+        installed_action = QAction("Installed Packages", self)
+        installed_action.triggered.connect(self.show_installed_packages)
+        packages_menu.addAction(installed_action)
 
         # Set default content
         self.code_editor.setPlainText(
@@ -590,6 +602,61 @@ class PythonIDE(QMainWindow):
 
         if ok and package_name:
             self.install_package(package_name)
+
+    from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QLabel
+
+    def show_installed_packages(self):
+        """
+        Display installed packages in a square dialog with scrolling and search functionality.
+        """
+        try:
+            # Get installed packages using pip
+            result = subprocess.run([sys.executable, "-m", "pip", "list"], capture_output=True, text=True)
+            installed_packages = result.stdout.split("\n")[2:]  # Skip headers
+
+            # Create dialog window
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Installed Packages")
+            dialog.setGeometry(200, 200, 400, 400)  # Square size
+            dialog.setStyleSheet("background-color: #1E1E1E; color: #CCCCCC;")
+
+            layout = QVBoxLayout(dialog)
+
+            # Search Bar
+            search_bar = QLineEdit()
+            search_bar.setPlaceholderText("Search for a package...")
+            search_bar.setStyleSheet("background-color: #2D2D2D; color: white; padding: 5px;")
+            layout.addWidget(search_bar)
+
+            # List Widget for Installed Packages
+            package_list = QListWidget()
+            package_list.setStyleSheet("background-color: #262626; color: white; border: none;")
+            layout.addWidget(package_list)
+
+            # Populate List
+            for package in installed_packages:
+                if package.strip():
+                    QListWidgetItem(package.strip(), package_list)
+
+            # Search Functionality
+            def filter_packages():
+                search_text = search_bar.text().lower()
+                for i in range(package_list.count()):
+                    item = package_list.item(i)
+                    item.setHidden(search_text not in item.text().lower())
+
+            search_bar.textChanged.connect(filter_packages)
+
+            # Close Button
+            close_button = QPushButton("Close")
+            close_button.setStyleSheet("background-color: #0E639C; color: white; padding: 5px; border-radius: 5px;")
+            close_button.clicked.connect(dialog.accept)
+            layout.addWidget(close_button)
+
+            dialog.exec_()
+
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to fetch installed packages:\n{str(e)}")
 
     def install_package(self, package_name):
         """
