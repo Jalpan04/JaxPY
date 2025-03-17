@@ -624,6 +624,8 @@ class PythonIDE(QMainWindow):
     def __init__(self):
         super().__init__()
         self.init_ui()
+        self.code_is_running = False  # Track if code is currently running
+
 
     def init_ui(self):
         # Set up the main window
@@ -713,20 +715,47 @@ class PythonIDE(QMainWindow):
             return action
 
         # Add actions to toolbar with the same style
-        run_action = create_action("Run", "F5", self.run_code)
-        new_action = create_action("New", None, self.new_file)
+        self.run_button = QToolButton(self)
+        self.run_button.setText("RUN")
+        self.run_button.setShortcut("F5")
+        self.run_button.clicked.connect(self.run_code)
+        self.run_button.setStyleSheet("background-color: green; color: white; padding: 5px 10px; border-radius: 5px;")
+
+
         open_action = create_action("Open", None, self.open_file)
         save_action = create_action("Save", None, self.save_file)
         find_replace_action = create_action("Find / Replace", "Ctrl+F", self.find_and_replace)
         new_window_action = create_action("New Window", None, self.new_window)
 
         # Add actions to toolbar
-        toolbar.addAction(run_action)
-        toolbar.addAction(new_action)
+        toolbar.addWidget(self.run_button)
+
+
+        # Create File button (for dropdown menu)
+        file_button = QToolButton(self)
+        file_button.setText("File")
+        file_button.setPopupMode(QToolButton.InstantPopup)  # Open menu on button click
+        file_button.setStyleSheet(button_style)
+
+        # Create dropdown menu
+        file_menu = QMenu(self)
+        file_button.setMenu(file_menu)  # Attach menu to the button
+
+        # Add actions to the file menu
+        new_action = create_action("New", None, self.new_file)
+        new_window_action = create_action("New Window", None, self.new_window)
+
+        # Add menu actions
+        file_menu.addAction(new_action)
+        file_menu.addAction(new_window_action)
+
+        # Add the button to the toolbar
+        toolbar.addWidget(file_button)
+
         toolbar.addAction(open_action)
         toolbar.addAction(save_action)
         toolbar.addAction(find_replace_action)
-        toolbar.addAction(new_window_action)
+
 
         # Create Packages button
         packages_button = QToolButton(self)
@@ -748,6 +777,8 @@ class PythonIDE(QMainWindow):
 
         # Add the button to the toolbar
         toolbar.addWidget(packages_button)
+
+
 
         # Apply the style to the toolbar actions
         toolbar.setStyleSheet(button_style)
@@ -787,25 +818,42 @@ class PythonIDE(QMainWindow):
 
     def run_code(self):
         """
-        Run the code from the editor in the console.
+        Run the code from the editor in the console, stopping previous if running.
         """
-        # Clear the console
+        if self.code_is_running:
+            # Stop previous execution
+            self.console.write("\n[Stopping previous execution...]\n")
+            self.interpreter.terminate()
+            self.interpreter.wait()
+            self.code_is_running = False
+            self.set_run_button_color("green")
+            self.run_code()  # Restart
+            return
+
+        self.code_is_running = True
+        self.set_run_button_color("red")
         self.console.clear()
 
-        # Get the code from the editor
         code = self.code_editor.toPlainText()
-
-        # Create and start the interpreter thread - FIXED: removed duplicate creation
         self.interpreter = PythonInterpreter(code, self.console)
         self.interpreter.finished.connect(self.on_execution_finished)
         self.interpreter.error_detected.connect(self.handle_module_error)
         self.interpreter.start()
+
+    def set_run_button_color(self, color):
+        if color == "green":
+            self.run_button.setStyleSheet(
+                "background-color: green; color: white; padding: 5px 10px; border-radius: 5px;")
+        elif color == "red":
+            self.run_button.setStyleSheet("background-color: red; color: white; padding: 5px 10px; border-radius: 5px;")
 
     def on_execution_finished(self):
         """
         Called when code execution is complete.
         """
         self.console.write("\n>>> ")
+        self.set_run_button_color("green")
+        self.code_is_running = False
 
     def new_file(self):
         """
@@ -876,6 +924,7 @@ class PythonIDE(QMainWindow):
             self.child_windows.append(new_ide)
         except Exception as e:
             print(f"Failed to open a new window: {e}")
+
 
     def find_and_replace(self):
         """
