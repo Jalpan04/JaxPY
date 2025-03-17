@@ -100,6 +100,14 @@ class CodeEditor(QPlainTextEdit):
         self.updateRequest.connect(self.update_line_number_area)
         self.cursorPositionChanged.connect(self.highlight_current_line)
 
+        self.foldable_lines = set()
+        self.folded_blocks = set()
+        self.line_number_area.setMouseTracking(True)
+        self.setMouseTracking(True)
+        self.textChanged.connect(self.detect_foldable_lines)
+        self.detect_foldable_lines()
+        self.hovered_line = -1
+
         self.update_line_number_area_width()
 
     def setup_editor(self):
@@ -125,6 +133,7 @@ class CodeEditor(QPlainTextEdit):
         super().resizeEvent(event)
         rect = self.contentsRect()
         self.line_number_area.setGeometry(rect.left(), rect.top(), self.line_number_area_width(), rect.height())
+        self.update_line_number_area(self.viewport().rect(), 0)
 
     def line_number_area_paint_event(self, event):
         painter = QPainter(self.line_number_area)
@@ -142,14 +151,14 @@ class CodeEditor(QPlainTextEdit):
 
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
-                number = str(block_number + 1)
-
-                # Text color for line numbers
-                painter.setPen(QColor("#FFFFFF"))
-
-                # Draw line number with extra spacing
-                painter.drawText(0, int(top), self.line_number_area.width() - padding_right,
-                                 self.fontMetrics().height(), Qt.AlignRight, number)
+                if block_number in self.foldable_lines and block_number == self.hovered_line:
+                    arrow = "▼" if block_number not in self.folded_blocks else "▶"
+                    painter.drawText(0, int(top), self.line_number_area.width() - padding_right,
+                                     self.fontMetrics().height(), Qt.AlignRight, arrow)
+                else:
+                    number = str(block_number + 1)
+                    painter.drawText(0, int(top), self.line_number_area.width() - padding_right,
+                                     self.fontMetrics().height(), Qt.AlignRight, number)
 
             block = block.next()
             top = bottom
@@ -178,6 +187,55 @@ class CodeEditor(QPlainTextEdit):
 
         self.setExtraSelections(extra_selections)
 
+    def detect_foldable_lines(self):
+        self.foldable_lines.clear()
+        self.fold_ranges = {}  # Map: start_line -> end_line
+
+        block = self.document().firstBlock()
+        while block.isValid():
+            text = block.text().rstrip()
+            if text.startswith("def ") or text.startswith("class "):
+                start_line = block.blockNumber()
+                start_indent = len(block.text()) - len(block.text().lstrip())
+
+                next_block = block.next()
+                while next_block.isValid():
+                    next_text = next_block.text().rstrip()
+                    if next_text.strip() == "":
+                        next_block = next_block.next()
+                        continue
+                    next_indent = len(next_text) - len(next_text.lstrip())
+                    if next_indent <= start_indent:
+                        break
+                    next_block = next_block.next()
+
+                end_line = next_block.blockNumber() - 1 if next_block.isValid() else self.document().blockCount() - 1
+                if end_line > start_line:
+                    self.foldable_lines.add(start_line)
+                    self.fold_ranges[start_line] = end_line
+
+            block = block.next()
+
+    def toggle_fold(self, line_number):
+        if line_number not in self.fold_ranges:
+            return
+
+        start = line_number
+        end = self.fold_ranges[start]
+
+        block = self.document().findBlockByNumber(start + 1)
+        hide = start not in self.folded_blocks  # True if folding now
+
+        while block.isValid() and block.blockNumber() <= end:
+            block.setVisible(not hide)
+            block = block.next()
+
+        self.viewport().update()
+        if hide:
+            self.folded_blocks.add(start)
+        else:
+            self.folded_blocks.remove(start)
+
 class LineNumberArea(QWidget):
     def __init__(self, editor):
         super().__init__(editor)
@@ -188,6 +246,37 @@ class LineNumberArea(QWidget):
 
     def paintEvent(self, event):
         self.code_editor.line_number_area_paint_event(event)
+
+    def mouseMoveEvent(self, event):
+        editor = self.code_editor
+        block = editor.firstVisibleBlock()
+        top = editor.blockBoundingGeometry(block).translated(editor.contentOffset()).top()
+        line_height = editor.fontMetrics().height()
+        line = int((event.y() - top) / line_height) + block.blockNumber()
+
+        if line != editor.hovered_line:
+            editor.hovered_line = line
+            self.update()
+
+        if line in editor.foldable_lines:
+            self.setCursor(Qt.PointingHandCursor)
+        else:
+            self.setCursor(Qt.ArrowCursor)
+
+    def leaveEvent(self, event):
+        self.code_editor.hovered_line = -1
+        self.update()
+
+    def mousePressEvent(self, event):
+        editor = self.code_editor
+        block = editor.firstVisibleBlock()
+        top = editor.blockBoundingGeometry(block).translated(editor.contentOffset()).top()
+        line_height = editor.fontMetrics().height()
+        line = int((event.y() - top) / line_height) + block.blockNumber()
+
+        if line in editor.foldable_lines:
+            editor.toggle_fold(line)
+
 
 class ConsoleWidget(QTextEdit):
     """
