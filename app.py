@@ -6,7 +6,7 @@ import subprocess
 import sys
 import traceback
 
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRegExp, QSize, QTimer
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRegExp, QSize, QTimer, QRect
 from PyQt5.QtGui import (QColor, QTextCharFormat, QFont, QPalette, QSyntaxHighlighter,
                          QTextCursor, QIcon, QPainter, QTextFormat)
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout,
@@ -88,6 +88,7 @@ class PythonHighlighter(QSyntaxHighlighter):
                 self.setFormat(index, length, format)
                 index = expression.indexIn(text, index + length)
 
+
 class CodeEditor(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -102,12 +103,16 @@ class CodeEditor(QPlainTextEdit):
 
         self.foldable_lines = set()
         self.folded_blocks = set()
+        self.fold_ranges = {}  # Map: start_line -> end_line
+        self.fold_types = {}  # Map: start_line -> fold_type (e.g., "def", "class")
+
         self.line_number_area.setMouseTracking(True)
         self.setMouseTracking(True)
         self.textChanged.connect(self.detect_foldable_lines)
-        self.detect_foldable_lines()
         self.hovered_line = -1
 
+        # Initialize the foldable lines
+        self.detect_foldable_lines()
         self.update_line_number_area_width()
 
     def setup_editor(self):
@@ -123,8 +128,10 @@ class CodeEditor(QPlainTextEdit):
 
     def line_number_area_width(self):
         digits = len(str(self.blockCount()))
-        space = 12  # Add extra space for padding
-        return 10 + self.fontMetrics().width('9') * digits + space
+        # Increased width for better visibility
+        extra_width = 20
+        padding = 20
+        return extra_width + self.fontMetrics().width('9') * digits + padding
 
     def update_line_number_area_width(self):
         self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
@@ -140,25 +147,60 @@ class CodeEditor(QPlainTextEdit):
 
         # Background color for line numbers
         painter.fillRect(event.rect(), QColor("#262626"))
+        painter.setPen(QColor("#8A8A8A"))  # Set text color for line numbers
 
         block = self.firstVisibleBlock()
         block_number = block.blockNumber()
         top = self.blockBoundingGeometry(block).translated(self.contentOffset()).top()
         bottom = top + self.blockBoundingRect(block).height()
 
-        # Define spacing (increase to add more space)
-        padding_right = 10  # Extra space between line numbers and code
+        # Increased right padding
+        padding_right = 15
 
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
-                if block_number in self.foldable_lines and block_number == self.hovered_line:
+                if block_number in self.foldable_lines:
+                    # Get the fold type
+                    fold_type = self.fold_types.get(block_number, "other")
+
+                    # Set color based on fold type
+                    if fold_type == "def":
+                        # Darker color for function definitions
+                        base_color = QColor("#52585C")  # Darker blue for def
+                    elif fold_type == "class":
+                        base_color = QColor("#61686D")  # Brown-orange for class
+                    else:
+                        base_color = QColor("#71797E")  # Gray for other folds
+
+                    # Use the base color for normal state
+                    painter.setPen(base_color)
+
+                    # Draw the fold indicator (triangle)
                     arrow = "▼" if block_number not in self.folded_blocks else "▶"
-                    painter.drawText(0, int(top), self.line_number_area.width() - padding_right,
-                                     self.fontMetrics().height(), Qt.AlignRight, arrow)
-                else:
-                    number = str(block_number + 1)
-                    painter.drawText(0, int(top), self.line_number_area.width() - padding_right,
-                                     self.fontMetrics().height(), Qt.AlignRight, number)
+
+                    # Highlight fold indicator on hover with a lighter version of the same color
+                    if block_number == self.hovered_line:
+                        # Create a lighter version of the same color for hover state
+                        highlight_color = QColor(
+                            min(base_color.red() + 40, 255),
+                            min(base_color.green() + 40, 255),
+                            min(base_color.blue() + 40, 255)
+                        )
+                        painter.setPen(highlight_color)
+
+                    # Position the fold indicator with more space
+                    fold_rect = QRect(0, int(top), self.line_number_area.width() - 5,
+                                      self.fontMetrics().height())
+                    painter.drawText(fold_rect, Qt.AlignRight, arrow)
+
+                # Draw line number
+                painter.setPen(QColor("#8A8A8A"))  # Reset pen color for line numbers
+                number = str(block_number + 1)
+
+                # Create a separate rect for line numbers with more left spacing
+                number_rect = QRect(5, int(top), self.line_number_area.width() - padding_right - 15,
+                                    self.fontMetrics().height())
+                painter.drawText(number_rect, Qt.AlignRight, number)
 
             block = block.next()
             top = bottom
@@ -188,53 +230,108 @@ class CodeEditor(QPlainTextEdit):
         self.setExtraSelections(extra_selections)
 
     def detect_foldable_lines(self):
+        """Detect lines that can be folded (function and class definitions)"""
         self.foldable_lines.clear()
-        self.fold_ranges = {}  # Map: start_line -> end_line
+        self.fold_ranges.clear()
+        self.fold_types.clear()
+
+        # Store current folded state to restore after detection
+        old_folded_blocks = self.folded_blocks.copy()
+        self.folded_blocks.clear()
+
+        # Create a stack to track nested code blocks
+        indent_stack = []
 
         block = self.document().firstBlock()
         while block.isValid():
-            text = block.text().rstrip()
-            if text.startswith("def ") or text.startswith("class "):
-                start_line = block.blockNumber()
-                start_indent = len(block.text()) - len(block.text().lstrip())
+            text = block.text()
+            stripped = text.strip()
+            current_line = block.blockNumber()
 
-                next_block = block.next()
-                while next_block.isValid():
-                    next_text = next_block.text().rstrip()
-                    if next_text.strip() == "":
-                        next_block = next_block.next()
-                        continue
-                    next_indent = len(next_text) - len(next_text.lstrip())
-                    if next_indent <= start_indent:
-                        break
-                    next_block = next_block.next()
+            # Only process non-empty lines
+            if stripped:
+                current_indent = len(text) - len(text.lstrip())
 
-                end_line = next_block.blockNumber() - 1 if next_block.isValid() else self.document().blockCount() - 1
-                if end_line > start_line:
-                    self.foldable_lines.add(start_line)
-                    self.fold_ranges[start_line] = end_line
+                # Pop any indent levels that are greater than or equal to current
+                while indent_stack and indent_stack[-1][1] >= current_indent:
+                    start_line, _, block_type = indent_stack.pop()
+
+                    # If we've gone back to a less indented level and the block
+                    # had content that could be folded, mark it as foldable
+                    if current_line - start_line > 1:  # At least one line to fold
+                        self.foldable_lines.add(start_line)
+                        self.fold_ranges[start_line] = current_line - 1
+                        self.fold_types[start_line] = block_type
+
+                # Add potential fold start points with their type
+                if stripped.startswith("def "):
+                    indent_stack.append((current_line, current_indent, "def"))
+                elif stripped.startswith("class "):
+                    indent_stack.append((current_line, current_indent, "class"))
+                elif stripped.startswith(("if ", "for ", "while ", "try:", "with ")):
+                    indent_stack.append((current_line, current_indent, "other"))
 
             block = block.next()
 
+        # Handle any remaining blocks in the stack (these go to the end of the document)
+        end_line = self.document().blockCount() - 1
+        for start_line, _, block_type in indent_stack:
+            if end_line - start_line > 1:  # At least one line to fold
+                self.foldable_lines.add(start_line)
+                self.fold_ranges[start_line] = end_line
+                self.fold_types[start_line] = block_type
+
+        # Restore fold state for lines that were previously folded and are still foldable
+        for line in old_folded_blocks:
+            if line in self.foldable_lines:
+                self.toggle_fold(line)  # This will add it back to folded_blocks
+
     def toggle_fold(self, line_number):
+        """Toggle folding for the specified line number"""
         if line_number not in self.fold_ranges:
             return
 
-        start = line_number
-        end = self.fold_ranges[start]
+        start_line = line_number
+        end_line = self.fold_ranges[start_line]
 
-        block = self.document().findBlockByNumber(start + 1)
-        hide = start not in self.folded_blocks  # True if folding now
+        # Check if we're folding or unfolding
+        is_folding = start_line not in self.folded_blocks
 
-        while block.isValid() and block.blockNumber() <= end:
-            block.setVisible(not hide)
+        # Update the folded blocks set
+        if is_folding:
+            self.folded_blocks.add(start_line)
+        else:
+            self.folded_blocks.discard(start_line)
+
+        # We need to use document layout for proper folding
+        document = self.document()
+
+        # Disable screen updates and document change notifications temporarily
+        self.setUpdatesEnabled(False)
+        document.blockSignals(True)
+
+        # Process blocks in the fold range
+        block = document.findBlockByNumber(start_line + 1)
+        while block.isValid() and block.blockNumber() <= end_line:
+            block.setVisible(not is_folding)
             block = block.next()
 
+        # Re-enable signals and updates
+        document.blockSignals(False)
+        self.setUpdatesEnabled(True)
+
+        # Update the document layout
+        document.markContentsDirty(document.findBlockByNumber(start_line).position(),
+                                   document.findBlockByNumber(end_line).position())
         self.viewport().update()
-        if hide:
-            self.folded_blocks.add(start)
-        else:
-            self.folded_blocks.remove(start)
+
+        # Ensure the cursor is visible (in case it was in a folded section)
+        cursor_block = self.textCursor().block().blockNumber()
+        if not document.findBlockByNumber(cursor_block).isVisible():
+            cursor = self.textCursor()
+            cursor.setPosition(document.findBlockByNumber(start_line).position())
+            self.setTextCursor(cursor)
+
 
 class LineNumberArea(QWidget):
     def __init__(self, editor):
@@ -248,32 +345,62 @@ class LineNumberArea(QWidget):
         self.code_editor.line_number_area_paint_event(event)
 
     def mouseMoveEvent(self, event):
+        """Track mouse movement to highlight foldable lines"""
         editor = self.code_editor
         block = editor.firstVisibleBlock()
         top = editor.blockBoundingGeometry(block).translated(editor.contentOffset()).top()
         line_height = editor.fontMetrics().height()
-        line = int((event.y() - top) / line_height) + block.blockNumber()
 
+        # Calculate which line the mouse is hovering over
+        y_pos = event.y()
+        line = block.blockNumber()
+
+        while block.isValid():
+            block_top = editor.blockBoundingGeometry(block).translated(editor.contentOffset()).top()
+            if y_pos < block_top + editor.blockBoundingRect(block).height() and block.isVisible():
+                line = block.blockNumber()
+                break
+            block = block.next()
+            if not block.isValid():
+                break
+
+        # Update the hovered line and cursor
         if line != editor.hovered_line:
             editor.hovered_line = line
             self.update()
 
+        # Change cursor if hovering over a foldable line
         if line in editor.foldable_lines:
             self.setCursor(Qt.PointingHandCursor)
         else:
             self.setCursor(Qt.ArrowCursor)
 
     def leaveEvent(self, event):
+        """Handle mouse leaving the line number area"""
         self.code_editor.hovered_line = -1
+        self.setCursor(Qt.ArrowCursor)
         self.update()
 
     def mousePressEvent(self, event):
+        """Handle clicking on fold indicators"""
         editor = self.code_editor
         block = editor.firstVisibleBlock()
         top = editor.blockBoundingGeometry(block).translated(editor.contentOffset()).top()
-        line_height = editor.fontMetrics().height()
-        line = int((event.y() - top) / line_height) + block.blockNumber()
 
+        # Calculate which line was clicked
+        y_pos = event.y()
+        line = block.blockNumber()
+
+        while block.isValid():
+            block_top = editor.blockBoundingGeometry(block).translated(editor.contentOffset()).top()
+            if y_pos < block_top + editor.blockBoundingRect(block).height() and block.isVisible():
+                line = block.blockNumber()
+                break
+            block = block.next()
+            if not block.isValid():
+                break
+
+        # Toggle folding if a foldable line was clicked
         if line in editor.foldable_lines:
             editor.toggle_fold(line)
 
