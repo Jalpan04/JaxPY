@@ -718,7 +718,7 @@ class PythonIDE(QMainWindow):
         open_action = create_action("Open", None, self.open_file)
         save_action = create_action("Save", None, self.save_file)
         find_replace_action = create_action("Find / Replace", "Ctrl+F", self.find_and_replace)
-
+        new_window_action = create_action("New Window", None, self.new_window)
 
         # Add actions to toolbar
         toolbar.addAction(run_action)
@@ -726,6 +726,7 @@ class PythonIDE(QMainWindow):
         toolbar.addAction(open_action)
         toolbar.addAction(save_action)
         toolbar.addAction(find_replace_action)
+        toolbar.addAction(new_window_action)
 
         # Create Packages button
         packages_button = QToolButton(self)
@@ -859,6 +860,22 @@ class PythonIDE(QMainWindow):
 
         except Exception as e:
             self.console.write(f"\n[Auto-Save Failed] {str(e)}\n")
+
+    def new_window(self):
+        """
+        Opens a new instance of the IDE in a separate window.
+        Ensures proper reference handling and error management.
+        """
+        try:
+            new_ide = PythonIDE()
+            new_ide.show()
+
+            # Store reference to prevent garbage collection
+            if not hasattr(self, "child_windows"):
+                self.child_windows = []
+            self.child_windows.append(new_ide)
+        except Exception as e:
+            print(f"Failed to open a new window: {e}")
 
     def find_and_replace(self):
         """
