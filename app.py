@@ -4,8 +4,9 @@ import keyword
 import re
 import subprocess
 import traceback
+import builtins
 from typing import List, Tuple, Dict, Set, Optional
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRegExp, QSize, QTimer, QRect
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRegExp, QSize, QTimer, QRect, QStringListModel
 from PyQt5.QtGui import (
     QColor, QTextCharFormat, QFont, QPalette, QSyntaxHighlighter,
     QTextCursor, QIcon, QPainter, QTextFormat
@@ -14,7 +15,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QSplitter, QTextEdit, QPlainTextEdit, QFileDialog, QDialog,
     QLineEdit, QListWidget, QListWidgetItem, QPushButton, QLabel,
-    QMessageBox, QInputDialog, QAction, QToolBar, QToolButton, QMenu
+    QMessageBox, QInputDialog, QAction, QToolBar, QToolButton, QMenu, QCompleter
 )
 
 class Config:
@@ -28,6 +29,14 @@ class Config:
     ERROR_COLOR = "#FF5555"  # Red for errors
     WARNING_COLOR = "#FFC107"  # Yellow for warnings
     AUTO_SAVE_INTERVAL = 30000  # milliseconds
+    PYTHON_BUILTINS = dir(builtins)
+    COMMON_IMPORTS = [
+        "os", "sys", "math", "random", "datetime", "time", "json",
+        "re", "subprocess", "threading", "multiprocessing", "socket",
+        "requests", "numpy", "pandas", "matplotlib", "tkinter"
+    ]
+    AUTOCOMPLETE_TRIGGERS = [".", "im"]
+
 
 
 class HighlightRules:
@@ -216,6 +225,7 @@ class CodeEditor(QPlainTextEdit):
             f"color: {Config.TEXT_COLOR}; background-color: {Config.BACKGROUND_COLOR}; padding: 3px;"
         )
         self.update_error_warning_count()
+        self._setup_autocomplete()
 
     def _setup_ui(self) -> None:
         font = QFont(Config.EDITOR_FONT, Config.FONT_SIZE)
@@ -332,7 +342,85 @@ class CodeEditor(QPlainTextEdit):
                 self.editor.viewport().update()
         return DisableUpdates(self)
 
+    def _setup_autocomplete(self) -> None:
+        self.completer = QCompleter()
+        self.completer.setWidget(self)
+        self.completer.setCompletionMode(QCompleter.PopupCompletion)
+        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.model = QStringListModel(Config.PYTHON_BUILTINS + Config.COMMON_IMPORTS + keyword.kwlist)
+        self.completer.setModel(self.model)
+        self.completer.activated.connect(self.insert_completion)
+        # Style the popup
+        self.completer.popup().setStyleSheet("""
+            QListView {
+                background-color: #2D2D2D;
+                color: #D4D4D4;
+                border: 1px solid #555555;
+            }
+            QListView::item:hover { background-color: #3A3A3A; }
+        """)
+
+    def insert_completion(self, completion: str) -> None:
+        cursor = self.textCursor()
+        prefix = self.completer.completionPrefix()
+        cursor.movePosition(QTextCursor.StartOfWord, QTextCursor.KeepAnchor)
+        cursor.insertText(completion)
+        self.setTextCursor(cursor)
+        self.completer.popup().hide()
+
+    def show_autocomplete(self) -> None:
+        # Prevent recursive calls
+        if hasattr(self, '_autocomplete_active') and self._autocomplete_active:
+            return
+
+        try:
+            self._autocomplete_active = True
+
+            cursor = self.textCursor()
+            text = self.toPlainText()
+            pos = cursor.position()
+
+            # Get the word under the cursor
+            cursor.select(QTextCursor.WordUnderCursor)
+            word = cursor.selectedText()
+            cursor.setPosition(pos)  # Restore cursor position
+
+            # Check if we're in an import statement or after a dot
+            line_start = text.rfind('\n', 0, pos) + 1
+            current_line = text[line_start:pos]
+            is_import = current_line.strip().startswith('import ') or current_line.strip().startswith('from ')
+
+            prefix = word if not is_import else current_line.split()[-1] if current_line.split() else ""
+
+            if prefix and (any(prefix.startswith(t) for t in Config.AUTOCOMPLETE_TRIGGERS) or len(prefix) > 1):
+                self.completer.setCompletionPrefix(prefix[1:] if prefix.startswith('.') else prefix)
+                if self.completer.completionCount() > 0:
+                    # Force the popup to appear exactly at cursor position
+                    rect = self.cursorRect()
+                    rect.setWidth(self.completer.popup().sizeHint().width())
+                    self.completer.complete(rect)
+                else:
+                    self.completer.popup().hide()
+            else:
+                self.completer.popup().hide()
+        finally:
+            self._autocomplete_active = False
+
     def keyPressEvent(self, event) -> None:
+        if self.completer and self.completer.popup().isVisible():
+            if event.key() in (Qt.Key_Tab, Qt.Key_Return, Qt.Key_Enter):
+                event.accept()
+                self.insert_completion(self.completer.currentCompletion())
+                return
+            elif event.key() == Qt.Key_Escape:
+                event.accept()
+                self.completer.popup().hide()
+                return
+            elif event.key() in (Qt.Key_Up, Qt.Key_Down):
+                event.accept()
+                self.completer.popup().event(event)
+                return
+
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
             cursor = self.textCursor()
             cursor.movePosition(QTextCursor.StartOfLine, QTextCursor.KeepAnchor)
@@ -343,7 +431,18 @@ class CodeEditor(QPlainTextEdit):
             super().keyPressEvent(event)
             self.insertPlainText(indent)
             return
+        elif event.key() == Qt.Key_Tab and event.modifiers() == Qt.ShiftModifier:
+            event.accept()
+            QTimer.singleShot(10, lambda: self.show_autocomplete())
+            return
+
         super().keyPressEvent(event)
+
+        # Trigger autocomplete dynamically using a delay
+        text = event.text()
+        if text.isalnum() or text in Config.AUTOCOMPLETE_TRIGGERS:
+            # Use a longer timeout to prevent event collisions
+            QTimer.singleShot(50, lambda: self.show_autocomplete())
 
     def format_code(self) -> None:
         """Format code using black."""
