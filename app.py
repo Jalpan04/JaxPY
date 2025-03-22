@@ -25,7 +25,10 @@ class Config:
     TEXT_COLOR = "#D4D4D4"
     LINE_NUMBER_BG = "#262626"
     LINE_NUMBER_FG = "#8A8A8A"
+    ERROR_COLOR = "#FF5555"  # Red for errors
+    WARNING_COLOR = "#FFC107"  # Yellow for warnings
     AUTO_SAVE_INTERVAL = 30000  # milliseconds
+
 
 class HighlightRules:
     """Lazy-loaded syntax highlighting rules"""
@@ -58,7 +61,7 @@ class HighlightRules:
         ]
 
 class PythonHighlighter(QSyntaxHighlighter):
-    """Syntax highlighter for Python code"""
+    """Syntax highlighter for Python code with error/warning detection"""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.comment_rule = HighlightRules.get_comment_rule()
@@ -67,8 +70,30 @@ class PythonHighlighter(QSyntaxHighlighter):
             HighlightRules.get_string_rules() +
             [HighlightRules.get_keyword_rule(word) for word in keyword.kwlist]
         )
+        self.errors: Dict[int, str] = {}  # line: message
+        self.warnings: Dict[int, str] = {}  # line: message
 
     def highlightBlock(self, text: str) -> None:
+        line_number = self.currentBlock().blockNumber()
+        self.errors.pop(line_number, None)
+        self.warnings.pop(line_number, None)
+
+        # Syntax checking
+        if text.strip() and not text.strip().startswith('#'):
+            try:
+                compile(text, '<string>', 'exec')  # Basic syntax check
+            except SyntaxError as e:
+                self.errors[line_number] = str(e)
+            except Exception as e:
+                self.warnings[line_number] = f"Potential issue: {str(e)}"
+
+            # Warning checks
+            if "print " in text:  # Python 2 style print
+                self.warnings[line_number] = "Old-style print statement"
+            if re.search(r'^\s*import\s+\*', text):
+                self.warnings[line_number] = "Wildcard import detected"
+
+        # Apply highlighting
         index = self.comment_rule[0].indexIn(text)
         if index >= 0:
             self.setFormat(index, len(text) - index, self.comment_rule[1])
@@ -79,6 +104,18 @@ class PythonHighlighter(QSyntaxHighlighter):
                 length = pattern.matchedLength()
                 self.setFormat(index, length, format_)
                 index = pattern.indexIn(text, index + length)
+
+        # Highlight errors and warnings
+        if line_number in self.errors:
+            error_format = QTextCharFormat()
+            error_format.setUnderlineStyle(QTextCharFormat.WaveUnderline)
+            error_format.setUnderlineColor(QColor(Config.ERROR_COLOR))
+            self.setFormat(0, len(text), error_format)
+        elif line_number in self.warnings:
+            warning_format = QTextCharFormat()
+            warning_format.setUnderlineStyle(QTextCharFormat.DashWaveUnderline)
+            warning_format.setUnderlineColor(QColor(Config.WARNING_COLOR))
+            self.setFormat(0, len(text), warning_format)
 
 class LineNumberArea(QWidget):
     """Widget for displaying line numbers and fold indicators"""
@@ -129,7 +166,6 @@ class LineNumberArea(QWidget):
             QRect(5, int(top), self.width() - 20, self.editor.fontMetrics().height()),
             Qt.AlignRight, str(block_num + 1)
         )
-
     def mouseMoveEvent(self, event) -> None:
         block = self.editor.firstVisibleBlock()
         y_pos = event.y()
@@ -175,6 +211,11 @@ class CodeEditor(QPlainTextEdit):
         self.fold_types: Dict[int, str] = {}
         self._setup_ui()
         self._connect_signals()
+        self.error_warning_label = QLabel(self)
+        self.error_warning_label.setStyleSheet(
+            f"color: {Config.TEXT_COLOR}; background-color: {Config.BACKGROUND_COLOR}; padding: 3px;"
+        )
+        self.update_error_warning_count()
 
     def _setup_ui(self) -> None:
         font = QFont(Config.EDITOR_FONT, Config.FONT_SIZE)
@@ -191,6 +232,7 @@ class CodeEditor(QPlainTextEdit):
         self.updateRequest.connect(self.update_line_number_area)
         self.cursorPositionChanged.connect(self.highlight_current_line)
         self.textChanged.connect(self.detect_foldable_lines)
+        self.textChanged.connect(self.update_error_warning_count)
 
     def line_number_area_width(self) -> int:
         digits = len(str(self.blockCount()))
@@ -313,6 +355,23 @@ class CodeEditor(QPlainTextEdit):
             self.document().setModified(False)
         except Exception:
             pass  # Silently ignore formatting errors
+
+    def update_error_warning_count(self) -> None:
+        errors = len(self.highlighter.errors)
+        warnings = len(self.highlighter.warnings)
+        self.error_warning_label.setText(
+            f"<span style='color:{Config.ERROR_COLOR}'>ⓘ {errors}</span> "
+            f"<span style='color:{Config.WARNING_COLOR}'>⚠ {warnings}</span>"
+        )
+        self.error_warning_label.adjustSize()
+        self.error_warning_label.move(
+            self.viewport().width() - self.error_warning_label.width() - 10,
+            5
+        )
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        self.update_error_warning_count()
 
 
 class ConsoleWidget(QTextEdit):
