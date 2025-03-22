@@ -304,15 +304,16 @@ class CodeEditor(QPlainTextEdit):
         super().keyPressEvent(event)
 
     def format_code(self) -> None:
+        """Format code using black."""
         try:
             import black
-            formatted = black.format_str(self.toPlainText(), mode=black.FileMode())
+            code = self.toPlainText()
+            formatted = black.format_str(code, mode=black.Mode(line_length=88))
             self.setPlainText(formatted)
             self.document().setModified(False)
-        except ImportError:
-            QMessageBox.warning(self, "Formatting Error", "Please install black: pip install black")
-        except Exception as e:
-            QMessageBox.warning(self, "Formatting Error", f"Failed to format: {str(e)}")
+        except Exception:
+            pass  # Silently ignore formatting errors
+
 
 class ConsoleWidget(QTextEdit):
     """Integrated console widget"""
