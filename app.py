@@ -332,6 +332,50 @@ class CodeEditor(QPlainTextEdit):
             cursor.setPosition(document.findBlockByNumber(start_line).position())
             self.setTextCursor(cursor)
 
+    def keyPressEvent(self, event):
+        """
+        Handle key press events to implement auto-indentation.
+        """
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            cursor = self.textCursor()
+            cursor.movePosition(QTextCursor.StartOfLine, QTextCursor.KeepAnchor)
+            current_line = cursor.selectedText()
+
+            # Calculate current indentation
+            indent_level = len(current_line) - len(current_line.lstrip())
+            indent_text = " " * indent_level
+
+            # Check if the line ends with a colon (e.g., def, if, for, etc.)
+            stripped_line = current_line.strip()
+            if stripped_line.endswith(":"):
+                indent_text += "    "  # Add one more level of indentation (4 spaces)
+
+            # Insert newline with appropriate indentation
+            super().keyPressEvent(event)
+            self.insertPlainText(indent_text)
+            return
+
+        super().keyPressEvent(event)
+
+    def format_code(self):
+        """
+        Format the code using black formatter.
+        """
+        try:
+            import black
+        except ImportError:
+            QMessageBox.warning(self, "Formatting Error",
+                               "The 'black' formatter is not installed.\n"
+                               "Install it using: pip install black")
+            return
+
+        code = self.toPlainText()
+        try:
+            formatted_code = black.format_str(code, mode=black.FileMode())
+            self.setPlainText(formatted_code)
+            self.document().setModified(False)  # Mark as not modified after formatting
+        except Exception as e:
+            QMessageBox.warning(self, "Formatting Error", f"Failed to format code:\n{str(e)}")
 
 class LineNumberArea(QWidget):
     def __init__(self, editor):
@@ -778,6 +822,9 @@ class PythonIDE(QMainWindow):
         # Add the button to the toolbar
         toolbar.addWidget(packages_button)
 
+        # Add Format action
+        format_action = create_action("Format", "Ctrl+Shift+F", self.format_code)
+        toolbar.addAction(format_action)
 
 
         # Apply the style to the toolbar actions
@@ -1216,6 +1263,11 @@ class PythonIDE(QMainWindow):
             )
             self.console.write("\n>>> ")
 
+    def format_code(self):
+        """
+        Trigger code formatting in the editor.
+        """
+        self.code_editor.format_code()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
