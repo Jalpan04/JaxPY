@@ -1,7 +1,8 @@
 import requests
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLineEdit, QPushButton
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QTextCursor
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLineEdit, QPushButton, QApplication
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt5.QtGui import QTextCursor, QClipboard, QTextFormat
+
 
 class BoltAIWorker(QThread):
     """Worker thread to handle AI responses from Ollama via API"""
@@ -13,12 +14,11 @@ class BoltAIWorker(QThread):
 
     def run(self):
         try:
-            # Use Ollama's REST API to generate a response
             url = "http://localhost:11434/api/generate"
             payload = {
                 "model": "qwen2.5-coder:3b",
                 "prompt": self.prompt,
-                "stream": False  # Get full response at once
+                "stream": False
             }
             response = requests.post(url, json=payload)
             if response.status_code == 200:
@@ -33,12 +33,13 @@ class BoltAIWorker(QThread):
 
 
 class BoltAI(QWidget):
-    """Bolt AI chat interface for coding assistance"""
+    """Bolt AI chat interface for coding assistance with enhanced UI"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent = parent
         self.worker: BoltAIWorker = None
+        self.clipboard = QApplication.clipboard()
         self._setup_ui()
 
     def _setup_ui(self):
@@ -98,16 +99,86 @@ class BoltAI(QWidget):
         self.worker.start()
 
     def display_response(self, response: str):
-        self.chat_display.append(f"<b>Bolt AI:</b> {response}")
+        """Display AI response with code blocks and copy buttons"""
+        parts = response.split("```")
+        formatted_response = "<b>Bolt AI:</b> "
+
+        for i, part in enumerate(parts):
+            if i % 2 == 0:  # Text outside code blocks
+                formatted_response += part.replace("\n", "<br>")
+            else:  # Code inside code blocks
+                # Detect language if specified (e.g., ```python)
+                language = ""
+                code_lines = part.strip().splitlines()
+                if code_lines and not code_lines[0].startswith(" "):
+                    language = code_lines[0].strip()
+                    code = "\n".join(code_lines[1:]) if len(code_lines) > 1 else ""
+                else:
+                    code = part
+
+                # Unique ID for the copy button
+                button_id = f"copy_{id(self)}_{i}"
+                formatted_response += f"""
+                    <table style='width: 100%; margin: 5px 0;'>
+                        <tr>
+                            <td style='
+                                background-color: #1E1E1E;
+                                color: #D4D4D4;
+                                font-family: Consolas, monospace;
+                                padding: 10px;
+                                border: 1px solid #3A3A3A;
+                                border-radius: 5px;
+                                white-space: pre-wrap;
+                                word-wrap: break-word;'>{code}</td>
+                            <td style='width: 80px; vertical-align: top;'>
+                                <input type='button' value='Copy Code' id='{button_id}' 
+                                    style='
+                                        background-color: #0E639C;
+                                        color: white;
+                                        padding: 5px;
+                                        border: none;
+                                        border-radius: 3px;
+                                        cursor: pointer;'
+                                    onmouseover='this.style.backgroundColor="#1177BB"'
+                                    onmouseout='this.style.backgroundColor="#0E639C"'>
+                            </td>
+                        </tr>
+                    </table>
+                """
+                # Delay binding the button click until the HTML is rendered
+                QTimer.singleShot(100, lambda c=code, b=button_id: self._bind_copy_button(c, b))
+
+        self.chat_display.append(formatted_response)
         self.chat_display.moveCursor(QTextCursor.End)
         if self.worker:
             self.worker.deleteLater()
             self.worker = None
 
+    def _bind_copy_button(self, code: str, button_id: str):
+        """Bind the copy button to copy the code to clipboard"""
+        cursor = self.chat_display.textCursor()
+        cursor.movePosition(QTextCursor.Start)
+        while cursor.movePosition(QTextCursor.NextBlock):
+            block_text = cursor.block().text()
+            if button_id in block_text:
+                self.chat_display.setTextCursor(cursor)
+                # Connect a signal to copy the code when clicked
+                self.chat_display.document().find(f"id='{button_id}'").charFormat().setProperty(
+                    QTextFormat.UserProperty, lambda: self._copy_to_clipboard(code))
+                break
+
+    def _copy_to_clipboard(self, code: str):
+        """Copy the code to the clipboard"""
+        self.clipboard.setText(code.strip())
+        # Optional: Provide feedback (e.g., tooltip or temporary text change)
+        self.chat_display.append("<i>Copied to clipboard!</i>")
+        QTimer.singleShot(2000, lambda: self.chat_display.undo())  # Remove feedback after 2 seconds
+
 
 if __name__ == "__main__":
     from PyQt5.QtWidgets import QApplication
     import sys
+
     app = QApplication(sys.argv)
     window = BoltAI()
     window.show()
