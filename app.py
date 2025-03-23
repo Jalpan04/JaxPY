@@ -26,13 +26,13 @@ from bolt_ai import BoltAI  # Import the BoltAI class from bolt_ai.py
 class Config:
     """Centralized configuration constants"""
     EDITOR_FONT = "Consolas"
-    FONT_SIZE = 10
-    BACKGROUND_COLOR = "#1E1E1E"
+    FONT_SIZE = 14  # Increased from 11 to 14
+    BACKGROUND_COLOR = "#1E1F22"  # Inverted: now the darker color
     TEXT_COLOR = "#D4D4D4"
-    LINE_NUMBER_BG = "#262626"
+    LINE_NUMBER_BG = "#353535"  # Inverted: now the lighter color
     LINE_NUMBER_FG = "#8A8A8A"
     ERROR_COLOR = "#FF5555"
-    WARNING_COLOR = "#FFC107"
+    WARNING_COLOR = "#FFC61A"
     AUTO_SAVE_INTERVAL = 30000  # milliseconds
     PYTHON_BUILTINS = dir(builtins)
     COMMON_IMPORTS = [
@@ -63,7 +63,7 @@ class HighlightRules:
     def get_rules(cls) -> List[Tuple[QRegExp, QTextCharFormat]]:
         return [
             (QRegExp(r'#[^\n]*'), cls._create_format("#6A9955")),  # Comments
-            (QRegExp(r'\b[A-Za-z0-9_]+(?=\()'), cls._create_format("#DCDCAA")),  # Functions
+            (QRegExp(r'\b[A-Za-z0-9_]+(?=\()'), cls._create_format("#ECDC51")),  # Functions
             (QRegExp(r"'[^'\\]*(\\.[^'\\]*)*'"), cls._create_format("#CE9178")),  # Single quotes
             (QRegExp(r'"[^"\\]*(\\.[^"\\]*)*"'), cls._create_format("#CE9178")),  # Double quotes
         ] + [(QRegExp(rf'\b{word}\b'), cls._create_format("#569CD6", True)) for word in keyword.kwlist]
@@ -196,7 +196,7 @@ class CodeEditor(QPlainTextEdit):
         self._setup_autocomplete()
         self.error_warning_label = QLabel(self)
         self.error_warning_label.setStyleSheet(
-            f"color: {Config.TEXT_COLOR}; background-color: {Config.BACKGROUND_COLOR}; padding: 3px;"
+            f"color: {Config.TEXT_COLOR}; background-color: {Config.BACKGROUND_COLOR}; padding: 8px; font-size: 14px;"
         )
         self._autocomplete_active = False
 
@@ -214,6 +214,14 @@ class CodeEditor(QPlainTextEdit):
         self.cursorPositionChanged.connect(self.highlight_current_line)
         self.textChanged.connect(self._on_text_changed)
         self.setAcceptDrops(True)
+        self.setStyleSheet("""
+            QPlainTextEdit {
+                background-color: #1E1F22;
+                color: #D4D4D4;
+                border: none;
+                padding: 8px;
+            }
+        """)
 
     def _on_text_changed(self) -> None:
         self.highlighter.update_full_code(self.toPlainText())
@@ -221,7 +229,7 @@ class CodeEditor(QPlainTextEdit):
         self.update_error_warning_count()
 
     def line_number_area_width(self) -> int:
-        return 40 + self.fontMetrics().width('9') * max(1, len(str(self.blockCount())))
+        return 50 + self.fontMetrics().width('9') * max(1, len(str(self.blockCount())))  # Increased width
 
     def update_line_number_area_width(self) -> None:
         self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
@@ -239,7 +247,7 @@ class CodeEditor(QPlainTextEdit):
     def highlight_current_line(self) -> None:
         if not self.isReadOnly():
             selection = QTextEdit.ExtraSelection()
-            selection.format.setBackground(QColor("#2A2D2E"))
+            selection.format.setBackground(QColor("#353535"))  # Inverted
             selection.format.setProperty(QTextFormat.FullWidthSelection, True)
             selection.cursor = self.textCursor()
             selection.cursor.clearSelection()
@@ -315,8 +323,15 @@ class CodeEditor(QPlainTextEdit):
         self.completer.setCaseSensitivity(Qt.CaseInsensitive)
         self.completer.activated.connect(self.insert_completion)
         self.completer.popup().setStyleSheet("""
-            QListView { background-color: #2D2D2D; color: #D4D4D4; border: 1px solid #555555; }
-            QListView::item:hover { background-color: #3A3A3A; }
+            QListView {
+                background-color: #353535;
+                color: #D4D4D4;
+                border: 1px solid #555555;
+                font-size: 14px;
+            }
+            QListView::item:hover {
+                background-color: #1E1F22;
+            }
         """)
 
     def insert_completion(self, completion: str) -> None:
@@ -419,7 +434,7 @@ class CodeEditor(QPlainTextEdit):
             f"<span style='color:{Config.WARNING_COLOR}'>⚠ {warnings}</span>"
         )
         self.error_warning_label.move(
-            self.viewport().width() - self.error_warning_label.width() - 10, 5
+            self.viewport().width() - self.error_warning_label.width() - 15, 8
         )
 
     def paintEvent(self, event) -> None:
@@ -446,6 +461,14 @@ class ConsoleWidget(QTextEdit):
         palette.setColor(QPalette.Text, QColor("#CCCCCC"))
         self.setPalette(palette)
         self.setReadOnly(True)
+        self.setStyleSheet("""
+            QTextEdit {
+                background-color: #1E1F22;
+                color: #CCCCCC;
+                border: none;
+                padding: 8px;
+            }
+        """)
 
     def write(self, text: str) -> None:
         self.moveCursor(QTextCursor.End)
@@ -596,7 +619,8 @@ class PythonIDE(QMainWindow):
     def _init_ui(self) -> None:
         self.setWindowTitle("JaxPY")
         self.setWindowIcon(QIcon("JaxPY.ico"))
-        self.setGeometry(100, 100, 1000, 800)
+        # Set to full screen
+        self.showMaximized()
 
         # Toolbar setup (fixed at top)
         toolbar = QToolBar()
@@ -605,8 +629,8 @@ class PythonIDE(QMainWindow):
 
         # Add JaxPY logo to toolbar
         logo_label = QLabel()
-        logo_label.setPixmap(QIcon("JaxPY.ico").pixmap(24, 24))
-        logo_label.setStyleSheet("padding: 5px;")
+        logo_label.setPixmap(QIcon("JaxPY.ico").pixmap(30, 30))  # Increased size
+        logo_label.setStyleSheet("padding: 8px; background-color: #353535;")
         toolbar.addWidget(logo_label)
 
         # Add Run button and other toolbar actions
@@ -614,10 +638,32 @@ class PythonIDE(QMainWindow):
         self.run_button.setText("RUN")
         self.run_button.setShortcut("F5")
         self.run_button.clicked.connect(self.run_code)
-        self.run_button.setStyleSheet("background-color: green; color: white; padding: 5px 10px; border-radius: 5px;")
+        self.run_button.setStyleSheet("""
+            QToolButton {
+                background-color: #ECDC51;
+                color: #1E1F22;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QToolButton:hover {
+                background-color: #FFC61A;
+            }
+        """)
         toolbar.addWidget(self.run_button)
 
-        button_style = "background-color: #1e1e1e; color: white; padding: 5px 10px; border-radius: 5px;"
+        button_style = """
+            QToolButton {
+                background-color: #353535;
+                color: #D4D4D4;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QToolButton:hover {
+                background-color: #1E1F22;
+            }
+        """
         for name, shortcut, callback in [
             ("File", None, lambda: None),
             ("Open", None, self.open_file),
@@ -632,6 +678,18 @@ class PythonIDE(QMainWindow):
                 btn.setPopupMode(QToolButton.InstantPopup)
                 btn.setStyleSheet(button_style)
                 menu = QMenu(self)
+                menu.setStyleSheet("""
+                    QMenu {
+                        background-color: #353535;
+                        color: #D4D4D4;
+                        border: 1px solid #1E1F22;
+                        font-size: 14px;
+                    }
+                    QMenu::item:selected {
+                        background-color: #ECDC51;
+                        color: #1E1F22;
+                    }
+                """)
                 btn.setMenu(menu)
                 if name == "File":
                     menu.addAction("New", self.new_file)
@@ -655,18 +713,18 @@ class PythonIDE(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Toggle button container (fixed below logo)
+        # Toggle button container (fixed below toolbar)
         toggle_container = QWidget()
         toggle_layout = QHBoxLayout(toggle_container)
-        toggle_layout.setContentsMargins(0, 0, 0, 0)
+        toggle_layout.setContentsMargins(8, 0, 0, 0)
         toggle_layout.setSpacing(0)
 
         # Setup sidebar (toggle button added to toggle_layout)
         self.sidebar = Sidebar(self)
         toggle_layout.addWidget(self.sidebar.toggle_button)
         toggle_layout.addStretch()
-        toggle_container.setFixedHeight(40)
-        toggle_container.setStyleSheet("background-color: #2D2D2D;")
+        toggle_container.setFixedHeight(50)  # Increased height
+        toggle_container.setStyleSheet("background-color: #353535;")
         main_layout.addWidget(toggle_container)
 
         # Main content splitter (resizable)
@@ -676,7 +734,7 @@ class PythonIDE(QMainWindow):
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         self.bolt_ai = BoltAI(self)  # Initialize Bolt AI
         sidebar_layout.addWidget(self.bolt_ai)
-        self.sidebar_content.setMinimumWidth(250)
+        self.sidebar_content.setMinimumWidth(400)  # Increased width
         self.sidebar_content.setVisible(False)  # Hidden by default
         content_splitter.addWidget(self.sidebar_content)
 
@@ -691,29 +749,44 @@ class PythonIDE(QMainWindow):
         console_layout.setContentsMargins(0, 0, 0, 0)
         header = QHBoxLayout()
         header.addWidget(QLabel("Terminal",
-                                styleSheet="color: #CCCCCC; background-color: #2D2D2D; padding: 3px; font-weight: bold;"))
+                                styleSheet="color: #ECDC51; background-color: #353535; padding: 8px; font-size: 14px; font-weight: bold;"))
         header.addStretch()
-        self.save_status_dot = QLabel("●", styleSheet="color: red; background-color: #2D2D2D; padding: 3px")
+        self.save_status_dot = QLabel("●", styleSheet="color: red; background-color: #353535; padding: 8px; font-size: 14px;")
         header.addWidget(self.save_status_dot)
         console_layout.addLayout(header)
         self.console = ConsoleWidget()
         console_layout.addWidget(self.console)
         editor_console_splitter.addWidget(console_container)
-        editor_console_splitter.setSizes([600, 200])
+        editor_console_splitter.setSizes([800, 300])  # Increased sizes
 
         content_splitter.addWidget(editor_console_splitter)
-        content_splitter.setSizes([0, 1000])  # Sidebar hidden by default
+        content_splitter.setSizes([0, 1200])  # Adjusted for larger UI
         main_layout.addWidget(content_splitter)
 
         self._setup_auto_save()
         self.code_editor.setPlainText(
             '# Welcome to Python IDE\n\nprint("Hello, World!")\nname = input("Enter your name: ")\nprint(f"Hello, {name}!")')
         self.setStyleSheet("""
-            QMainWindow, QWidget {background-color: #1E1E1E; color: #CCCCCC;}
-            QToolBar {background-color: #2D2D2D; border: none;}
-            QSplitter::handle {background-color: #2D2D2D;}
-            QPushButton {background-color: #0E639C; color: white; padding: 5px 10px;}
-            QPushButton:hover {background-color: #1177BB;}
+            QMainWindow, QWidget {
+                background-color: #1E1F22;
+                color: #D4D4D4;
+            }
+            QToolBar {
+                background-color: #353535;
+                border: none;
+            }
+            QSplitter::handle {
+                background-color: #353535;
+            }
+            QPushButton {
+                background-color: #ECDC51;
+                color: #1E1F22;
+                padding: 8px 15px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #FFC61A;
+            }
         """)
 
     def _setup_auto_save(self) -> None:
@@ -738,7 +811,18 @@ class PythonIDE(QMainWindow):
             return
 
         self.code_is_running = True
-        self.run_button.setStyleSheet("background-color: red; color: white; padding: 5px 10px; border-radius: 5px;")
+        self.run_button.setStyleSheet("""
+            QToolButton {
+                background-color: #FF5555;
+                color: #1E1F22;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QToolButton:hover {
+                background-color: #FF7777;
+            }
+        """)
         self.console.clear()
         self.interpreter = PythonInterpreter(self.code_editor.toPlainText(), self.console)
         self.interpreter.finished.connect(self._on_execution_finished)
@@ -747,7 +831,18 @@ class PythonIDE(QMainWindow):
 
     def _on_execution_finished(self) -> None:
         self.console.write("\n>>> ")
-        self.run_button.setStyleSheet("background-color: green; color: white; padding: 5px 10px; border-radius: 5px;")
+        self.run_button.setStyleSheet("""
+            QToolButton {
+                background-color: #ECDC51;
+                color: #1E1F22;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QToolButton:hover {
+                background-color: #FFC61A;
+            }
+        """)
         self.code_is_running = False
         if self.interpreter:
             self.interpreter.deleteLater()
@@ -791,10 +886,10 @@ class PythonIDE(QMainWindow):
             self._save_to_file(self.current_file, silent=True)
 
     def _mark_unsaved(self) -> None:
-        self.save_status_dot.setStyleSheet("color: red; background-color: #2D2D2D; padding: 3px")
+        self.save_status_dot.setStyleSheet("color: red; background-color: #353535; padding: 8px; font-size: 14px;")
 
     def _mark_saved(self) -> None:
-        self.save_status_dot.setStyleSheet("color: green; background-color: #2D2D2D; padding: 3px")
+        self.save_status_dot.setStyleSheet("color: #ECDC51; background-color: #353535; padding: 8px; font-size: 14px;")
 
     def new_window(self) -> None:
         try:
@@ -807,18 +902,22 @@ class PythonIDE(QMainWindow):
     def find_and_replace(self) -> None:
         dialog = QDialog(self)
         dialog.setWindowTitle("Find and Replace")
-        dialog.setGeometry(300, 300, 350, 150)
+        dialog.setGeometry(300, 300, 400, 200)  # Increased size
+        dialog.setStyleSheet("background-color: #353535; color: #D4D4D4;")
         layout = QVBoxLayout(dialog)
 
         find_input = QLineEdit()
+        find_input.setStyleSheet("background-color: #1E1F22; color: #D4D4D4; padding: 8px; border: 1px solid #555555; font-size: 14px;")
         replace_input = QLineEdit()
+        replace_input.setStyleSheet("background-color: #1E1F22; color: #D4D4D4; padding: 8px; border: 1px solid #555555; font-size: 14px;")
         match_label = QLabel("Matches: 0")
+        match_label.setStyleSheet("color: #ECDC51; font-size: 14px;")
         match_positions: List[int] = []
         current_match_index = -1
 
-        layout.addWidget(QLabel("Find:"))
+        layout.addWidget(QLabel("Find:", styleSheet="color: #D4D4D4; font-size: 14px;"))
         layout.addWidget(find_input)
-        layout.addWidget(QLabel("Replace:"))
+        layout.addWidget(QLabel("Replace:", styleSheet="color: #D4D4D4; font-size: 14px;"))
         layout.addWidget(replace_input)
 
         match_layout = QHBoxLayout()
@@ -826,7 +925,17 @@ class PythonIDE(QMainWindow):
         for text, callback in [("◀", lambda: self._prev_match(match_positions, match_label, find_input)),
                                ("▶", lambda: self._next_match(match_positions, match_label, find_input))]:
             btn = QPushButton(text)
-            btn.setFixedSize(30, 30)
+            btn.setFixedSize(40, 40)  # Increased size
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #ECDC51;
+                    color: #1E1F22;
+                    font-size: 14px;
+                }
+                QPushButton:hover {
+                    background-color: #FFC61A;
+                }
+            """)
             btn.clicked.connect(callback)
             match_layout.addWidget(btn)
         layout.addLayout(match_layout)
@@ -836,7 +945,20 @@ class PythonIDE(QMainWindow):
             ("Replace", lambda: self._replace_text(find_input, replace_input, match_positions, match_label)),
             ("Replace All", lambda: self._replace_all_text(find_input, replace_input, dialog))
         ]:
-            layout.addWidget(QPushButton(text, clicked=callback))
+            btn = QPushButton(text)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #ECDC51;
+                    color: #1E1F22;
+                    padding: 8px 15px;
+                    font-size: 14px;
+                }
+                QPushButton:hover {
+                    background-color: #FFC61A;
+                }
+            """)
+            btn.clicked.connect(callback)
+            layout.addWidget(btn)
 
         dialog.exec_()
 
@@ -923,17 +1045,17 @@ class PythonIDE(QMainWindow):
             packages = result.stdout.split("\n")[2:]
             dialog = QDialog(self)
             dialog.setWindowTitle("Installed Packages")
-            dialog.setGeometry(200, 200, 400, 400)
-            dialog.setStyleSheet("background-color: #1E1E1E; color: #CCCCCC;")
+            dialog.setGeometry(200, 200, 500, 500)  # Increased size
+            dialog.setStyleSheet("background-color: #353535; color: #D4D4D4;")
             layout = QVBoxLayout(dialog)
 
             search_bar = QLineEdit()
             search_bar.setPlaceholderText("Search packages...")
-            search_bar.setStyleSheet("background-color: #2D2D2D; color: white; padding: 5px;")
+            search_bar.setStyleSheet("background-color: #1E1F22; color: #D4D4D4; padding: 8px; border: 1px solid #555555; font-size: 14px;")
             layout.addWidget(search_bar)
 
             package_list = QListWidget()
-            package_list.setStyleSheet("background-color: #262626; color: white;")
+            package_list.setStyleSheet("background-color: #1E1F22; color: #D4D4D4; border: none; font-size: 14px;")
             for pkg in packages:
                 if pkg.strip():
                     QListWidgetItem(pkg.strip(), package_list)
@@ -944,8 +1066,20 @@ class PythonIDE(QMainWindow):
                               for i in range(package_list.count())]
             )
 
-            layout.addWidget(QPushButton("Close", clicked=dialog.accept,
-                                         styleSheet="background-color: #0E639C; color: white; padding: 5px;"))
+            close_btn = QPushButton("Close")
+            close_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #ECDC51;
+                    color: #1E1F22;
+                    padding: 8px 15px;
+                    font-size: 14px;
+                }
+                QPushButton:hover {
+                    background-color: #FFC61A;
+                }
+            """)
+            close_btn.clicked.connect(dialog.accept)
+            layout.addWidget(close_btn)
             dialog.exec_()
         except subprocess.CalledProcessError as e:
             QMessageBox.warning(self, "Error", f"Failed to list packages: {str(e)}")
@@ -1008,11 +1142,19 @@ class Sidebar:
     def _setup_ui(self) -> None:
         self.toggle_button = QPushButton()
         self.toggle_button.setIcon(QIcon("bolt.png"))  # Bolt AI icon
-        self.toggle_button.setIconSize(QSize(30, 30))
-        self.toggle_button.setFixedSize(35, 35)
+        self.toggle_button.setIconSize(QSize(40, 40))  # Increased size
+        self.toggle_button.setFixedSize(50, 50)  # Increased size
         self.toggle_button.setStyleSheet("""
-            QPushButton {background-color: #2D2D2D; color: #CCCCCC; border: none; padding: 0px; margin: 0px;}
-            QPushButton:hover {background-color: #3A3A3A;}
+            QPushButton {
+                background-color: #353535;
+                color: #ECDC51;
+                border: none;
+                padding: 0px;
+                margin: 0px;
+            }
+            QPushButton:hover {
+                background-color: #1E1F22;
+            }
         """)
         self.toggle_button.clicked.connect(self._toggle_sidebar)
         self.toggle_button.setToolTip("Show Bolt AI")
@@ -1025,7 +1167,7 @@ class Sidebar:
         # Adjust splitter sizes when toggling
         splitter = self.parent.centralWidget().layout().itemAt(1).widget()
         if self.sidebar_visible:
-            splitter.setSizes([250, splitter.sizes()[1]])  # Show sidebar with initial width
+            splitter.setSizes([400, splitter.sizes()[1]])  # Increased width
         else:
             splitter.setSizes([0, splitter.sizes()[1]])  # Hide sidebar
 

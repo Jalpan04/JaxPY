@@ -1,5 +1,5 @@
 import requests
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLineEdit, QPushButton, QApplication
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QLineEdit, QPushButton, QApplication
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QTextCursor, QClipboard, QTextFormat
 
@@ -44,41 +44,60 @@ class BoltAI(QWidget):
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setContentsMargins(8, 8, 8, 8)
 
         # Chat display
         self.chat_display = QTextEdit()
         self.chat_display.setReadOnly(True)
         self.chat_display.setStyleSheet("""
-            background-color: #262626;
-            color: #D4D4D4;
-            border: none;
-            padding: 5px;
+            QTextEdit {
+                background-color: #353535;
+                color: #D4D4D4;
+                border: none;
+                padding: 15px;
+                font-size: 14px;
+            }
         """)
-        self.chat_display.append("Bolt AI: Hello! I'm here to help with coding questions and provide code examples.")
+        self.chat_display.append("<b style='color: #ECDC51;'>Bolt AI:</b> Hello! I'm here to help with coding questions and provide code examples.")
         layout.addWidget(self.chat_display)
 
-        # Input field
+        # Input field and Send button container
+        input_container = QWidget()
+        input_layout = QHBoxLayout(input_container)
+        input_layout.setContentsMargins(0, 0, 0, 0)
+        input_layout.setSpacing(8)
+
         self.input_field = QLineEdit()
         self.input_field.setPlaceholderText("Ask Bolt AI about coding...")
         self.input_field.setStyleSheet("""
-            background-color: #2D2D2D;
-            color: #D4D4D4;
-            border: 1px solid #555555;
-            padding: 5px;
+            QLineEdit {
+                background-color: #1E1F22;
+                color: #D4D4D4;
+                border: 1px solid #555555;
+                padding: 10px;
+                font-size: 14px;
+            }
         """)
         self.input_field.returnPressed.connect(self.send_message)
-        layout.addWidget(self.input_field)
+        input_layout.addWidget(self.input_field)
 
-        # Send button
         send_button = QPushButton("Send")
         send_button.setStyleSheet("""
-            background-color: #0E639C;
-            color: white;
-            padding: 5px;
+            QPushButton {
+                background-color: #ECDC51;
+                color: #1E1F22;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #FFC61A;
+            }
         """)
         send_button.clicked.connect(self.send_message)
-        layout.addWidget(send_button)
+        input_layout.addWidget(send_button)
+
+        layout.addWidget(input_container)
 
     def send_message(self):
         message = self.input_field.text().strip()
@@ -86,7 +105,7 @@ class BoltAI(QWidget):
             return
 
         # Display user message
-        self.chat_display.append(f"<b>You:</b> {message}")
+        self.chat_display.append(f"<b style='color: #FFC61A;'>You:</b> {message}")
         self.input_field.clear()
 
         # Start worker thread to get AI response
@@ -101,7 +120,7 @@ class BoltAI(QWidget):
     def display_response(self, response: str):
         """Display AI response with code blocks and copy buttons"""
         parts = response.split("```")
-        formatted_response = "<b>Bolt AI:</b> "
+        formatted_response = "<b style='color: #ECDC51;'>Bolt AI:</b> "
 
         for i, part in enumerate(parts):
             if i % 2 == 0:  # Text outside code blocks
@@ -119,28 +138,29 @@ class BoltAI(QWidget):
                 # Unique ID for the copy button
                 button_id = f"copy_{id(self)}_{i}"
                 formatted_response += f"""
-                    <table style='width: 100%; margin: 5px 0;'>
+                    <table style='width: 100%; margin: 8px 0;'>
                         <tr>
                             <td style='
-                                background-color: #1E1E1E;
+                                background-color: #1E1F22;
                                 color: #D4D4D4;
                                 font-family: Consolas, monospace;
-                                padding: 10px;
-                                border: 1px solid #3A3A3A;
-                                border-radius: 5px;
+                                padding: 15px;
+                                border: 1px solid #555555;
                                 white-space: pre-wrap;
-                                word-wrap: break-word;'>{code}</td>
-                            <td style='width: 80px; vertical-align: top;'>
+                                word-wrap: break-word;
+                                font-size: 14px;'>{code}</td>
+                            <td style='width: 100px; vertical-align: top;'>
                                 <input type='button' value='Copy Code' id='{button_id}' 
                                     style='
-                                        background-color: #0E639C;
-                                        color: white;
-                                        padding: 5px;
+                                        background-color: #ECDC51;
+                                        color: #1E1F22;
+                                        padding: 8px;
                                         border: none;
-                                        border-radius: 3px;
-                                        cursor: pointer;'
-                                    onmouseover='this.style.backgroundColor="#1177BB"'
-                                    onmouseout='this.style.backgroundColor="#0E639C"'>
+                                        cursor: pointer;
+                                        font-size: 14px;
+                                        font-weight: bold;'
+                                    onmouseover='this.style.backgroundColor="#FFC61A"'
+                                    onmouseout='this.style.backgroundColor="#ECDC51"'>
                             </td>
                         </tr>
                     </table>
@@ -170,8 +190,8 @@ class BoltAI(QWidget):
     def _copy_to_clipboard(self, code: str):
         """Copy the code to the clipboard"""
         self.clipboard.setText(code.strip())
-        # Optional: Provide feedback (e.g., tooltip or temporary text change)
-        self.chat_display.append("<i>Copied to clipboard!</i>")
+        # Provide feedback
+        self.chat_display.append("<i style='color: #FFC61A;'>Copied to clipboard!</i>")
         QTimer.singleShot(2000, lambda: self.chat_display.undo())  # Remove feedback after 2 seconds
 
 
