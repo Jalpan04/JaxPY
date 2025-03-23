@@ -1,12 +1,15 @@
 import sys
 import io
+import os
 import keyword
 import re
 import subprocess
 import traceback
 import builtins
 from typing import List, Tuple, Dict, Set, Optional
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRegExp, QSize, QTimer, QRect, QStringListModel
+
+from PyQt5 import QtCore
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRegExp, QSize, QTimer, QRect, QSettings
 from PyQt5.QtGui import (
     QColor, QTextCharFormat, QFont, QPalette, QSyntaxHighlighter,
     QTextCursor, QIcon, QPainter, QTextFormat
@@ -14,9 +17,11 @@ from PyQt5.QtGui import (
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QSplitter, QTextEdit, QPlainTextEdit, QFileDialog, QDialog,
-    QLineEdit, QListWidget, QListWidgetItem, QPushButton, QLabel,
-    QMessageBox, QInputDialog, QAction, QToolBar, QToolButton, QMenu, QCompleter
+    QLineEdit, QPushButton, QLabel, QMessageBox, QInputDialog,
+    QAction, QToolBar, QToolButton, QMenu, QCompleter, QListWidget, QListWidgetItem
 )
+
+from bolt_ai import BoltAI  # Import the BoltAI class from bolt_ai.py
 
 class Config:
     """Centralized configuration constants"""
@@ -26,8 +31,8 @@ class Config:
     TEXT_COLOR = "#D4D4D4"
     LINE_NUMBER_BG = "#262626"
     LINE_NUMBER_FG = "#8A8A8A"
-    ERROR_COLOR = "#FF5555"  # Red for errors
-    WARNING_COLOR = "#FFC107"  # Yellow for warnings
+    ERROR_COLOR = "#FF5555"
+    WARNING_COLOR = "#FFC107"
     AUTO_SAVE_INTERVAL = 30000  # milliseconds
     PYTHON_BUILTINS = dir(builtins)
     COMMON_IMPORTS = [
@@ -36,127 +41,98 @@ class Config:
         "requests", "numpy", "pandas", "matplotlib", "tkinter"
     ]
     AUTOCOMPLETE_TRIGGERS = [".", "im"]
-
+    DEFAULT_PROJECT_DIR = os.getcwd()
 
 
 class HighlightRules:
-    """Lazy-loaded syntax highlighting rules"""
-    @staticmethod
-    def get_comment_rule() -> Tuple[QRegExp, QTextCharFormat]:
-        format_ = QTextCharFormat()
-        format_.setForeground(QColor("#6A9955"))
-        return QRegExp(r'#[^\n]*'), format_
+    """Static syntax highlighting rules"""
+    _formats: Dict[str, QTextCharFormat] = {}
 
-    @staticmethod
-    def get_keyword_rule(word: str) -> Tuple[QRegExp, QTextCharFormat]:
-        format_ = QTextCharFormat()
-        format_.setForeground(QColor("#569CD6"))
-        format_.setFontWeight(QFont.Bold)
-        return QRegExp(rf'\b{word}\b'), format_
+    @classmethod
+    def _create_format(cls, color: str, bold: bool = False) -> QTextCharFormat:
+        key = f"{color}_{bold}"
+        if key not in cls._formats:
+            fmt = QTextCharFormat()
+            fmt.setForeground(QColor(color))
+            if bold:
+                fmt.setFontWeight(QFont.Bold)
+            cls._formats[key] = fmt
+        return cls._formats[key]
 
-    @staticmethod
-    def get_function_rule() -> Tuple[QRegExp, QTextCharFormat]:
-        format_ = QTextCharFormat()
-        format_.setForeground(QColor("#DCDCAA"))
-        return QRegExp(r'\b[A-Za-z0-9_]+(?=\()'), format_
-
-    @staticmethod
-    def get_string_rules() -> List[Tuple[QRegExp, QTextCharFormat]]:
-        format_ = QTextCharFormat()
-        format_.setForeground(QColor("#CE9178"))
+    @classmethod
+    def get_rules(cls) -> List[Tuple[QRegExp, QTextCharFormat]]:
         return [
-            (QRegExp(r"'[^'\\]*(\\.[^'\\]*)*'"), format_),
-            (QRegExp(r'"[^"\\]*(\\.[^"\\]*)*"'), format_)
-        ]
+            (QRegExp(r'#[^\n]*'), cls._create_format("#6A9955")),  # Comments
+            (QRegExp(r'\b[A-Za-z0-9_]+(?=\()'), cls._create_format("#DCDCAA")),  # Functions
+            (QRegExp(r"'[^'\\]*(\\.[^'\\]*)*'"), cls._create_format("#CE9178")),  # Single quotes
+            (QRegExp(r'"[^"\\]*(\\.[^"\\]*)*"'), cls._create_format("#CE9178")),  # Double quotes
+        ] + [(QRegExp(rf'\b{word}\b'), cls._create_format("#569CD6", True)) for word in keyword.kwlist]
+
 
 class PythonHighlighter(QSyntaxHighlighter):
-    """Syntax highlighter for Python code with improved error/warning detection"""
+    """Efficient Python syntax highlighter"""
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.comment_rule = HighlightRules.get_comment_rule()
-        self.rules: List[Tuple[QRegExp, QTextCharFormat]] = (
-            [HighlightRules.get_function_rule()] +
-            HighlightRules.get_string_rules() +
-            [HighlightRules.get_keyword_rule(word) for word in keyword.kwlist]
-        )
-        self.errors: Dict[int, str] = {}  # line: message
-        self.warnings: Dict[int, str] = {}  # line: message
-        self.full_code = ""  # Cache the full document text
+        self.rules = HighlightRules.get_rules()
+        self.errors: Dict[int, str] = {}
+        self.warnings: Dict[int, str] = {}
+        self._last_text = ""
 
     def update_full_code(self, full_text: str) -> None:
-        """Update the cached full code and re-evaluate errors."""
-        self.full_code = full_text
-        self._check_full_syntax()
+        if full_text != self._last_text:
+            self._last_text = full_text
+            self._check_full_syntax()
+            self.rehighlight()
 
     def _check_full_syntax(self) -> None:
-        """Check syntax of the entire document and map errors to lines."""
         self.errors.clear()
-        if not self.full_code.strip():
+        if not self._last_text.strip():
             return
         try:
-            # Compile the entire document
-            compile(self.full_code, '<document>', 'exec')
+            compile(self._last_text, '<document>', 'exec')
         except SyntaxError as e:
-            # Extract line number from the exception (1-based, adjust to 0-based)
             if hasattr(e, 'lineno') and e.lineno is not None:
-                line_number = e.lineno - 1
-                self.errors[line_number] = str(e)
-        except Exception:
-            pass  # Ignore non-syntax errors here
+                self.errors[e.lineno - 1] = str(e)
 
     def _check_warnings(self, text: str, line_number: int) -> None:
-        """Check for warnings in the current line."""
-        stripped_text = text.strip()
-        if not stripped_text or stripped_text.startswith('#'):
+        self.warnings.pop(line_number, None)
+        stripped = text.strip()
+        if not stripped or stripped.startswith('#'):
             return
-
-        # Check for Python 2-style print (excluding strings/comments)
-        if (re.search(r'\bprint\s+[^("]', text) and
-            not re.search(r'["\'].*print\s+[^("].*["\']', text)):
+        if re.search(r'\bprint\s+[^("]', text) and not re.search(r'["\'].*print\s+[^("].*["\']', text):
             self.warnings[line_number] = "Old-style print statement (use print())"
-
-        # Check for wildcard imports
-        if re.search(r'^\s*from\s+\w+\s+import\s+\*', text):
+        elif re.search(r'^\s*from\s+\w+\s+import\s+\*', text):
             self.warnings[line_number] = "Wildcard import detected (avoid 'from ... import *')"
 
     def highlightBlock(self, text: str) -> None:
         line_number = self.currentBlock().blockNumber()
-        self.warnings.pop(line_number, None)  # Clear previous warnings for this line
-
-        # Apply highlighting rules
-        index = self.comment_rule[0].indexIn(text)
-        if index >= 0:
-            self.setFormat(index, len(text) - index, self.comment_rule[1])
-            return  # Skip further processing for comments
-        for pattern, format_ in self.rules:
+        for pattern, fmt in self.rules:
             index = pattern.indexIn(text)
             while index >= 0:
                 length = pattern.matchedLength()
-                self.setFormat(index, length, format_)
+                self.setFormat(index, length, fmt)
                 index = pattern.indexIn(text, index + length)
 
-        # Check warnings independently
         self._check_warnings(text, line_number)
-
-        # Apply error/warning formatting (errors updated via full document check)
         if line_number in self.errors:
-            error_format = QTextCharFormat()
-            error_format.setUnderlineStyle(QTextCharFormat.WaveUnderline)
-            error_format.setUnderlineColor(QColor(Config.ERROR_COLOR))
-            self.setFormat(0, len(text), error_format)
+            fmt = HighlightRules._create_format(Config.ERROR_COLOR)
+            fmt.setUnderlineStyle(QTextCharFormat.WaveUnderline)
+            self.setFormat(0, len(text), fmt)
         elif line_number in self.warnings:
-            warning_format = QTextCharFormat()
-            warning_format.setUnderlineStyle(QTextCharFormat.DashWaveUnderline)
-            warning_format.setUnderlineColor(QColor(Config.WARNING_COLOR))
-            self.setFormat(0, len(text), warning_format)
+            fmt = HighlightRules._create_format(Config.WARNING_COLOR)
+            fmt.setUnderlineStyle(QTextCharFormat.DashWaveUnderline)
+            self.setFormat(0, len(text), fmt)
+
 
 class LineNumberArea(QWidget):
-    """Widget for displaying line numbers and fold indicators"""
+    """Optimized line number area"""
+
     def __init__(self, editor):
         super().__init__(editor)
         self.editor = editor
-        self.setMouseTracking(True)
         self.hovered_line = -1
+        self.setMouseTracking(True)
 
     def sizeHint(self) -> QSize:
         return QSize(self.editor.line_number_area_width(), 0)
@@ -164,55 +140,35 @@ class LineNumberArea(QWidget):
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.fillRect(event.rect(), QColor(Config.LINE_NUMBER_BG))
-        painter.setPen(QColor(Config.LINE_NUMBER_FG))
-
         block = self.editor.firstVisibleBlock()
-        top = self.editor.blockBoundingGeometry(block).translated(self.editor.contentOffset()).top()
+        top = int(self.editor.blockBoundingGeometry(block).translated(self.editor.contentOffset()).top())
 
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible():
                 block_num = block.blockNumber()
-                self._draw_line_info(painter, block_num, top)
-            block = block.next()
-            top += self.editor.blockBoundingRect(block).height()
-
-    def _draw_line_info(self, painter: QPainter, block_num: int, top: float) -> None:
-        if block_num in self.editor.foldable_lines:
-            fold_type = self.editor.fold_types.get(block_num, "other")
-            base_color = {"def": "#52585C", "class": "#61686D"}.get(fold_type, "#71797E")
-            if block_num == self.hovered_line:
-                highlight_color = QColor(
-                    min(QColor(base_color).red() + 40, 255),
-                    min(QColor(base_color).green() + 40, 255),
-                    min(QColor(base_color).blue() + 40, 255)
+                painter.setPen(QColor(Config.LINE_NUMBER_FG))
+                painter.drawText(
+                    QRect(5, top, self.width() - 20, self.editor.fontMetrics().height()),
+                    Qt.AlignRight, str(block_num + 1)
                 )
-                painter.setPen(highlight_color)
-            else:
-                painter.setPen(QColor(base_color))
-            arrow = "▼" if block_num not in self.editor.folded_blocks else "▶"
-            painter.drawText(
-                QRect(0, int(top), self.width() - 5, self.editor.fontMetrics().height()),
-                Qt.AlignRight, arrow
-            )
-        painter.setPen(QColor(Config.LINE_NUMBER_FG))
-        painter.drawText(
-            QRect(5, int(top), self.width() - 20, self.editor.fontMetrics().height()),
-            Qt.AlignRight, str(block_num + 1)
-        )
-    def mouseMoveEvent(self, event) -> None:
-        block = self.editor.firstVisibleBlock()
-        y_pos = event.y()
-        line = -1
-        while block.isValid():
-            block_top = self.editor.blockBoundingGeometry(block).translated(self.editor.contentOffset()).top()
-            if y_pos < block_top + self.editor.blockBoundingRect(block).height() and block.isVisible():
-                line = block.blockNumber()
-                break
+                if block_num in self.editor.foldable_lines:
+                    fold_type = self.editor.fold_types.get(block_num, "other")
+                    base_color = {"def": "#52585C", "class": "#61686D"}.get(fold_type, "#71797E")
+                    painter.setPen(
+                        QColor(base_color if block_num != self.hovered_line else QColor(base_color).lighter(140)))
+                    arrow = "▼" if block_num not in self.editor.folded_blocks else "▶"
+                    painter.drawText(
+                        QRect(0, top, self.width() - 5, self.editor.fontMetrics().height()),
+                        Qt.AlignRight, arrow
+                    )
             block = block.next()
-        if line != self.hovered_line:
-            self.hovered_line = line
-            self.update()
-        self.setCursor(Qt.PointingHandCursor if line in self.editor.foldable_lines else Qt.ArrowCursor)
+            top += int(self.editor.blockBoundingRect(block).height())
+
+    def mouseMoveEvent(self, event) -> None:
+        block = self.editor.cursorForPosition(event.pos()).block()
+        self.hovered_line = block.blockNumber() if block.isValid() and block.isVisible() else -1
+        self.setCursor(Qt.PointingHandCursor if self.hovered_line in self.editor.foldable_lines else Qt.ArrowCursor)
+        self.update()
 
     def leaveEvent(self, event) -> None:
         self.hovered_line = -1
@@ -220,20 +176,14 @@ class LineNumberArea(QWidget):
         self.update()
 
     def mousePressEvent(self, event) -> None:
-        block = self.editor.firstVisibleBlock()
-        y_pos = event.y()
-        line = -1
-        while block.isValid():
-            block_top = self.editor.blockBoundingGeometry(block).translated(self.editor.contentOffset()).top()
-            if y_pos < block_top + self.editor.blockBoundingRect(block).height() and block.isVisible():
-                line = block.blockNumber()
-                break
-            block = block.next()
-        if line in self.editor.foldable_lines:
-            self.editor.toggle_fold(line)
+        block = self.editor.cursorForPosition(event.pos()).block()
+        if block.isValid() and block.blockNumber() in self.editor.foldable_lines:
+            self.editor.toggle_fold(block.blockNumber())
+
 
 class CodeEditor(QPlainTextEdit):
-    """Custom code editor with folding and syntax highlighting"""
+    """Optimized code editor with folding and autocomplete"""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.line_number_area = LineNumberArea(self)
@@ -243,15 +193,12 @@ class CodeEditor(QPlainTextEdit):
         self.fold_ranges: Dict[int, int] = {}
         self.fold_types: Dict[int, str] = {}
         self._setup_ui()
-        self._connect_signals()
+        self._setup_autocomplete()
         self.error_warning_label = QLabel(self)
         self.error_warning_label.setStyleSheet(
             f"color: {Config.TEXT_COLOR}; background-color: {Config.BACKGROUND_COLOR}; padding: 3px;"
         )
-        self.update_error_warning_count()
-        self._setup_autocomplete()
-
-
+        self._autocomplete_active = False
 
     def _setup_ui(self) -> None:
         font = QFont(Config.EDITOR_FONT, Config.FONT_SIZE)
@@ -261,18 +208,20 @@ class CodeEditor(QPlainTextEdit):
         palette.setColor(QPalette.Base, QColor(Config.BACKGROUND_COLOR))
         palette.setColor(QPalette.Text, QColor(Config.TEXT_COLOR))
         self.setPalette(palette)
-        self.setTabStopWidth(4 * self.fontMetrics().width(' '))
-
-    def _connect_signals(self) -> None:
+        self.setTabStopWidth(self.fontMetrics().width(' ') * 4)
         self.blockCountChanged.connect(self.update_line_number_area_width)
         self.updateRequest.connect(self.update_line_number_area)
         self.cursorPositionChanged.connect(self.highlight_current_line)
-        self.textChanged.connect(self.detect_foldable_lines)
-        self.textChanged.connect(self.update_error_warning_count)
+        self.textChanged.connect(self._on_text_changed)
+        self.setAcceptDrops(True)
+
+    def _on_text_changed(self) -> None:
+        self.highlighter.update_full_code(self.toPlainText())
+        self.detect_foldable_lines()
+        self.update_error_warning_count()
 
     def line_number_area_width(self) -> int:
-        digits = len(str(self.blockCount()))
-        return 40 + self.fontMetrics().width('9') * digits
+        return 40 + self.fontMetrics().width('9') * max(1, len(str(self.blockCount())))
 
     def update_line_number_area_width(self) -> None:
         self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
@@ -285,41 +234,36 @@ class CodeEditor(QPlainTextEdit):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        rect = self.contentsRect()
-        self.line_number_area.setGeometry(rect.left(), rect.top(), self.line_number_area_width(), rect.height())
+        self.line_number_area.setGeometry(0, 0, self.line_number_area_width(), self.contentsRect().height())
 
     def highlight_current_line(self) -> None:
-        if self.isReadOnly():
-            return
-        selection = QTextEdit.ExtraSelection()
-        selection.format.setBackground(QColor("#2A2D2E"))
-        selection.format.setProperty(QTextFormat.FullWidthSelection, True)
-        selection.cursor = self.textCursor()
-        selection.cursor.clearSelection()
-        self.setExtraSelections([selection])
+        if not self.isReadOnly():
+            selection = QTextEdit.ExtraSelection()
+            selection.format.setBackground(QColor("#2A2D2E"))
+            selection.format.setProperty(QTextFormat.FullWidthSelection, True)
+            selection.cursor = self.textCursor()
+            selection.cursor.clearSelection()
+            self.setExtraSelections([selection])
 
     def detect_foldable_lines(self) -> None:
         self.foldable_lines.clear()
         self.fold_ranges.clear()
         self.fold_types.clear()
         indent_stack: List[Tuple[int, int, str]] = []
-
         block = self.document().firstBlock()
+
         while block.isValid():
-            text = block.text().strip()
+            text = block.text().rstrip()
             if text:
                 current_indent = len(block.text()) - len(block.text().lstrip())
                 current_line = block.blockNumber()
-
                 while indent_stack and indent_stack[-1][1] >= current_indent:
                     start_line, _, block_type = indent_stack.pop()
                     if current_line - start_line > 1:
                         self._add_foldable(start_line, current_line - 1, block_type)
-
                 if text.startswith(("def ", "class ", "if ", "for ", "while ", "try:", "with ")):
                     block_type = "def" if text.startswith("def ") else "class" if text.startswith("class ") else "other"
                     indent_stack.append((current_line, current_indent, block_type))
-
             block = block.next()
 
         end_line = self.document().blockCount() - 1
@@ -335,13 +279,8 @@ class CodeEditor(QPlainTextEdit):
     def toggle_fold(self, line_number: int) -> None:
         if line_number not in self.fold_ranges:
             return
-
         is_folding = line_number not in self.folded_blocks
-        if is_folding:
-            self.folded_blocks.add(line_number)
-        else:
-            self.folded_blocks.discard(line_number)
-
+        self.folded_blocks.add(line_number) if is_folding else self.folded_blocks.discard(line_number)
         document = self.document()
         with self._disable_updates():
             block = document.findBlockByNumber(line_number + 1)
@@ -356,74 +295,57 @@ class CodeEditor(QPlainTextEdit):
 
     def _disable_updates(self):
         class DisableUpdates:
-            def __init__(self, editor):
-                self.editor = editor
+            def __init__(self, editor): self.editor = editor
+
             def __enter__(self):
                 self.editor.setUpdatesEnabled(False)
                 self.editor.document().blockSignals(True)
                 return self
+
             def __exit__(self, *args):
                 self.editor.document().blockSignals(False)
                 self.editor.setUpdatesEnabled(True)
                 self.editor.viewport().update()
+
         return DisableUpdates(self)
 
     def _setup_autocomplete(self) -> None:
-        self.completer = QCompleter()
-        self.completer.setWidget(self)
+        self.completer = QCompleter(Config.PYTHON_BUILTINS + Config.COMMON_IMPORTS + keyword.kwlist, self)
         self.completer.setCompletionMode(QCompleter.PopupCompletion)
         self.completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self.model = QStringListModel(Config.PYTHON_BUILTINS + Config.COMMON_IMPORTS + keyword.kwlist)
-        self.completer.setModel(self.model)
         self.completer.activated.connect(self.insert_completion)
-        # Style the popup
         self.completer.popup().setStyleSheet("""
-            QListView {
-                background-color: #2D2D2D;
-                color: #D4D4D4;
-                border: 1px solid #555555;
-            }
+            QListView { background-color: #2D2D2D; color: #D4D4D4; border: 1px solid #555555; }
             QListView::item:hover { background-color: #3A3A3A; }
         """)
 
     def insert_completion(self, completion: str) -> None:
         cursor = self.textCursor()
-        prefix = self.completer.completionPrefix()
-        cursor.movePosition(QTextCursor.StartOfWord, QTextCursor.KeepAnchor)
-        cursor.insertText(completion)
+        extra = len(completion) - len(self.completer.completionPrefix())
+        cursor.movePosition(QTextCursor.Left)
+        cursor.movePosition(QTextCursor.EndOfWord)
+        cursor.insertText(completion[-extra:] if extra > 0 else completion)
         self.setTextCursor(cursor)
-        self.completer.popup().hide()
 
     def show_autocomplete(self) -> None:
-        # Prevent recursive calls
-        if hasattr(self, '_autocomplete_active') and self._autocomplete_active:
+        if self._autocomplete_active:
             return
-
+        self._autocomplete_active = True
         try:
-            self._autocomplete_active = True
-
             cursor = self.textCursor()
-            text = self.toPlainText()
-            pos = cursor.position()
-
-            # Get the word under the cursor
             cursor.select(QTextCursor.WordUnderCursor)
-            word = cursor.selectedText()
-            cursor.setPosition(pos)  # Restore cursor position
-
-            # Check if we're in an import statement or after a dot
-            line_start = text.rfind('\n', 0, pos) + 1
-            current_line = text[line_start:pos]
-            is_import = current_line.strip().startswith('import ') or current_line.strip().startswith('from ')
-
-            prefix = word if not is_import else current_line.split()[-1] if current_line.split() else ""
+            prefix = cursor.selectedText()
+            line_start = self.toPlainText().rfind('\n', 0, cursor.position()) + 1
+            current_line = self.toPlainText()[line_start:cursor.position()]
+            is_import = current_line.strip().startswith(('import ', 'from '))
+            prefix = current_line.split()[-1] if is_import and current_line.split() else prefix
 
             if prefix and (any(prefix.startswith(t) for t in Config.AUTOCOMPLETE_TRIGGERS) or len(prefix) > 1):
                 self.completer.setCompletionPrefix(prefix[1:] if prefix.startswith('.') else prefix)
-                if self.completer.completionCount() > 0:
-                    # Force the popup to appear exactly at cursor position
+                if self.completer.completionCount():
                     rect = self.cursorRect()
-                    rect.setWidth(self.completer.popup().sizeHint().width())
+                    rect.setWidth(self.completer.popup().sizeHintForColumn(0) +
+                                  self.completer.popup().verticalScrollBar().sizeHint().width())
                     self.completer.complete(rect)
                 else:
                     self.completer.popup().hide()
@@ -433,21 +355,18 @@ class CodeEditor(QPlainTextEdit):
             self._autocomplete_active = False
 
     def keyPressEvent(self, event) -> None:
-        if self.completer and self.completer.popup().isVisible():
-            if event.key() in (Qt.Key_Tab, Qt.Key_Return, Qt.Key_Enter):
-                event.accept()
+        if self.completer.popup().isVisible():
+            if event.key() in (Qt.Key_Enter, Qt.Key_Return, Qt.Key_Tab):
                 self.insert_completion(self.completer.currentCompletion())
                 return
             elif event.key() == Qt.Key_Escape:
-                event.accept()
                 self.completer.popup().hide()
                 return
             elif event.key() in (Qt.Key_Up, Qt.Key_Down):
-                event.accept()
                 self.completer.popup().event(event)
                 return
 
-        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+        if event.key() in (Qt.Key_Enter, Qt.Key_Return):
             cursor = self.textCursor()
             cursor.movePosition(QTextCursor.StartOfLine, QTextCursor.KeepAnchor)
             line = cursor.selectedText()
@@ -457,44 +376,51 @@ class CodeEditor(QPlainTextEdit):
             super().keyPressEvent(event)
             self.insertPlainText(indent)
             return
-        elif event.key() == Qt.Key_Tab and event.modifiers() == Qt.ShiftModifier:
-            event.accept()
-            QTimer.singleShot(10, lambda: self.show_autocomplete())
-            return
 
         super().keyPressEvent(event)
-
-        # Trigger autocomplete dynamically using a delay
-        text = event.text()
-        if text.isalnum() or text in Config.AUTOCOMPLETE_TRIGGERS:
-            # Use a longer timeout to prevent event collisions
-            QTimer.singleShot(50, lambda: self.show_autocomplete())
+        if event.text() and (event.text().isalnum() or event.text() in Config.AUTOCOMPLETE_TRIGGERS):
+            QTimer.singleShot(50, self.show_autocomplete)
 
     def format_code(self) -> None:
-        """Format code using black."""
         try:
             import black
-            code = self.toPlainText()
-            formatted = black.format_str(code, mode=black.Mode(line_length=88))
+            formatted = black.format_str(self.toPlainText(), mode=black.Mode(line_length=88))
             self.setPlainText(formatted)
             self.document().setModified(False)
-        except Exception:
-            pass  # Silently ignore formatting errors
+        except ImportError:
+            pass
+        except Exception as e:
+            if hasattr(self, 'parent') and hasattr(self.parent(), 'console'):
+                self.parent().console.write(f"Error formatting code: {str(e)}\n")
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        parent = self.parent()
+        for url in event.mimeData().urls():
+            file_path = url.toLocalFile()
+            if file_path.endswith('.py'):
+                try:
+                    with open(file_path, 'r', encoding="utf-8") as f:
+                        self.setPlainText(f.read())
+                    parent.current_file = file_path
+                    parent._mark_saved()
+                    parent.console.write(f"\n[Opened] {file_path}\n")
+                except Exception as e:
+                    parent.console.write(f"Error opening file: {str(e)}\n")
+        event.acceptProposedAction()
 
     def update_error_warning_count(self) -> None:
-        errors = len(self.highlighter.errors)
-        warnings = len(self.highlighter.warnings)
+        errors, warnings = len(self.highlighter.errors), len(self.highlighter.warnings)
         self.error_warning_label.setText(
             f"<span style='color:{Config.ERROR_COLOR}'>ⓘ {errors}</span> "
             f"<span style='color:{Config.WARNING_COLOR}'>⚠ {warnings}</span>"
         )
-        self.error_warning_label.adjustSize()
         self.error_warning_label.move(
-            self.viewport().width() - self.error_warning_label.width() - 10,
-            5
+            self.viewport().width() - self.error_warning_label.width() - 10, 5
         )
-
-
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
@@ -502,7 +428,8 @@ class CodeEditor(QPlainTextEdit):
 
 
 class ConsoleWidget(QTextEdit):
-    """Integrated console widget"""
+    """Efficient console widget"""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._setup_ui()
@@ -562,6 +489,7 @@ class ConsoleWidget(QTextEdit):
             return
         super().keyPressEvent(event)
 
+
 class PythonInterpreter(QThread):
     """Thread for executing Python code"""
     output_ready = pyqtSignal(str)
@@ -572,19 +500,21 @@ class PythonInterpreter(QThread):
         super().__init__()
         self.code = code
         self.console = console
+        self._running = True
 
     def run(self) -> None:
+        if not self._running:
+            return
         stdout, stderr, stdin = sys.stdout, sys.stderr, sys.stdin
         captured_output = io.StringIO()
         try:
             sys.stdout = self.console
             sys.stderr = captured_output
             sys.stdin = self.console
-            exec(compile(self.code, '<ide>', 'exec'), {'__name__': '__main__'})
+            exec(self.code, {'__name__': '__main__'})
         except ModuleNotFoundError as e:
-            module = str(e).split("'")[1] if "'" in str(e) else None
-            if module:
-                self.error_detected.emit(module)
+            module = str(e).split("'")[1] if "'" in str(e) else str(e)
+            self.error_detected.emit(module)
             self.console.write(f"{str(e)}\n")
             traceback.print_exc(file=self.console)
         except Exception as e:
@@ -593,7 +523,18 @@ class PythonInterpreter(QThread):
             if error_output := captured_output.getvalue():
                 self.console.write(error_output)
             sys.stdout, sys.stderr, sys.stdin = stdout, stderr, stdin
-            self.finished.emit()
+            captured_output.close()
+            if self._running:
+                self.finished.emit()
+
+    def stop(self) -> None:
+        self._running = False
+        self.terminate()
+        self.wait()
+
+    def __del__(self):
+        self.stop()
+
 
 class PackageInstaller(QThread):
     """Thread for installing packages"""
@@ -604,9 +545,11 @@ class PackageInstaller(QThread):
         super().__init__()
         self.package_name = package_name
         self.console = console
-        self.success = False
+        self._running = True
 
     def run(self) -> None:
+        if not self._running:
+            return
         try:
             self.output_ready.emit(f"Installing {self.package_name}...\n")
             process = subprocess.Popen(
@@ -614,23 +557,40 @@ class PackageInstaller(QThread):
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
             )
             stdout, stderr = process.communicate()
-            self.success = process.returncode == 0
+            success = process.returncode == 0
             self.output_ready.emit(
-                f"{'Successfully installed' if self.success else 'Failed to install'} "
-                f"{self.package_name}:\n{stdout if self.success else stderr}\n"
+                f"{'Successfully installed' if success else 'Failed to install'} "
+                f"{self.package_name}:\n{stdout if success else stderr}\n"
             )
+            if self._running:
+                self.finished.emit(success)
         except Exception as e:
             self.output_ready.emit(f"Error: {str(e)}\n")
-        finally:
-            self.finished.emit(self.success)
+            self.finished.emit(False)
+
+    def stop(self) -> None:
+        self._running = False
+        self.terminate()
+        self.wait()
+
+    def __del__(self):
+        self.stop()
+
 
 class PythonIDE(QMainWindow):
-    """Main IDE window"""
+    """Main IDE window with editor, fixed toolbar, and resizable components"""
+
     def __init__(self):
         super().__init__()
         self.current_file: Optional[str] = None
         self.code_is_running = False
         self.child_windows: List['PythonIDE'] = []
+        self.project_dir = Config.DEFAULT_PROJECT_DIR
+        self.settings = QSettings("xAI", "JaxPY")
+        self.project_dir = self.settings.value("project_dir", Config.DEFAULT_PROJECT_DIR, type=str)
+        self.interpreter: Optional[PythonInterpreter] = None
+        self.installer: Optional[PackageInstaller] = None
+        self.sidebar: Optional[Sidebar] = None
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -638,54 +598,18 @@ class PythonIDE(QMainWindow):
         self.setWindowIcon(QIcon("JaxPY.ico"))
         self.setGeometry(100, 100, 1000, 800)
 
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
-
-        splitter = QSplitter(Qt.Vertical)
-        self.code_editor = CodeEditor()
-        self.code_editor.textChanged.connect(self._mark_unsaved)
-        splitter.addWidget(self.code_editor)
-
-        console_container = QWidget()
-        console_layout = QVBoxLayout(console_container)
-        console_layout.setContentsMargins(0, 0, 0, 0)
-
-        header = QHBoxLayout()
-        terminal_label = QLabel("Terminal")
-        terminal_label.setStyleSheet("color: #CCCCCC; background-color: #2D2D2D; padding: 3px; font-weight: bold;")
-        header.addWidget(terminal_label)
-        header.addStretch()
-        self.save_status_dot = QLabel("●")
-        self.save_status_dot.setStyleSheet("color: red; background-color: #2D2D2D; padding: 3px")
-        header.addWidget(self.save_status_dot)
-        console_layout.addLayout(header)
-
-        self.console = ConsoleWidget()
-        console_layout.addWidget(self.console)
-        splitter.addWidget(console_container)
-        splitter.setSizes([600, 200])
-        main_layout.addWidget(splitter)
-
-        self._setup_toolbar()
-        self._setup_auto_save()
-        self.code_editor.setPlainText(
-            '# Welcome to Python IDE\n\nprint("Hello, World!")\n'
-            'name = input("Enter your name: ")\nprint(f"Hello, {name}!")'
-        )
-        self.setStyleSheet("""
-            QMainWindow, QWidget {background-color: #1E1E1E; color: #CCCCCC;}
-            QToolBar {background-color: #2D2D2D; border: none;}
-            QSplitter::handle {background-color: #2D2D2D;}
-            QPushButton {background-color: #0E639C; color: white; padding: 5px 10px;}
-            QPushButton:hover {background-color: #1177BB;}
-        """)
-
-    def _setup_toolbar(self) -> None:
+        # Toolbar setup (fixed at top)
         toolbar = QToolBar()
-        self.addToolBar(toolbar)
-        button_style = "background-color: #1e1e1e; color: white; padding: 5px 10px; border-radius: 5px;"
+        toolbar.setMovable(False)
+        self.addToolBar(Qt.TopToolBarArea, toolbar)
 
+        # Add JaxPY logo to toolbar
+        logo_label = QLabel()
+        logo_label.setPixmap(QIcon("JaxPY.ico").pixmap(24, 24))
+        logo_label.setStyleSheet("padding: 5px;")
+        toolbar.addWidget(logo_label)
+
+        # Add Run button and other toolbar actions
         self.run_button = QToolButton()
         self.run_button.setText("RUN")
         self.run_button.setShortcut("F5")
@@ -693,6 +617,7 @@ class PythonIDE(QMainWindow):
         self.run_button.setStyleSheet("background-color: green; color: white; padding: 5px 10px; border-radius: 5px;")
         toolbar.addWidget(self.run_button)
 
+        button_style = "background-color: #1e1e1e; color: white; padding: 5px 10px; border-radius: 5px;"
         for name, shortcut, callback in [
             ("File", None, lambda: None),
             ("Open", None, self.open_file),
@@ -711,6 +636,7 @@ class PythonIDE(QMainWindow):
                 if name == "File":
                     menu.addAction("New", self.new_file)
                     menu.addAction("New Window", self.new_window)
+                    menu.addAction("Set Project Directory", self.set_project_directory)
                 else:
                     menu.addAction("Install Packages", self.show_package_installer)
                     menu.addAction("Installed Packages", self.show_installed_packages)
@@ -722,18 +648,93 @@ class PythonIDE(QMainWindow):
                 action.triggered.connect(callback)
                 toolbar.addAction(action)
 
+        # Central widget for content below toolbar
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Toggle button container (fixed below logo)
+        toggle_container = QWidget()
+        toggle_layout = QHBoxLayout(toggle_container)
+        toggle_layout.setContentsMargins(0, 0, 0, 0)
+        toggle_layout.setSpacing(0)
+
+        # Setup sidebar (toggle button added to toggle_layout)
+        self.sidebar = Sidebar(self)
+        toggle_layout.addWidget(self.sidebar.toggle_button)
+        toggle_layout.addStretch()
+        toggle_container.setFixedHeight(40)
+        toggle_container.setStyleSheet("background-color: #2D2D2D;")
+        main_layout.addWidget(toggle_container)
+
+        # Main content splitter (resizable)
+        content_splitter = QSplitter(Qt.Horizontal)
+        self.sidebar_content = QWidget()  # Container for Bolt AI chat
+        sidebar_layout = QVBoxLayout(self.sidebar_content)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        self.bolt_ai = BoltAI(self)  # Initialize Bolt AI
+        sidebar_layout.addWidget(self.bolt_ai)
+        self.sidebar_content.setMinimumWidth(250)
+        self.sidebar_content.setVisible(False)  # Hidden by default
+        content_splitter.addWidget(self.sidebar_content)
+
+        # Editor and console splitter (resizable vertically)
+        editor_console_splitter = QSplitter(Qt.Vertical)
+        self.code_editor = CodeEditor(self)
+        self.code_editor.textChanged.connect(self._mark_unsaved)
+        editor_console_splitter.addWidget(self.code_editor)
+
+        console_container = QWidget()
+        console_layout = QVBoxLayout(console_container)
+        console_layout.setContentsMargins(0, 0, 0, 0)
+        header = QHBoxLayout()
+        header.addWidget(QLabel("Terminal",
+                                styleSheet="color: #CCCCCC; background-color: #2D2D2D; padding: 3px; font-weight: bold;"))
+        header.addStretch()
+        self.save_status_dot = QLabel("●", styleSheet="color: red; background-color: #2D2D2D; padding: 3px")
+        header.addWidget(self.save_status_dot)
+        console_layout.addLayout(header)
+        self.console = ConsoleWidget()
+        console_layout.addWidget(self.console)
+        editor_console_splitter.addWidget(console_container)
+        editor_console_splitter.setSizes([600, 200])
+
+        content_splitter.addWidget(editor_console_splitter)
+        content_splitter.setSizes([0, 1000])  # Sidebar hidden by default
+        main_layout.addWidget(content_splitter)
+
+        self._setup_auto_save()
+        self.code_editor.setPlainText(
+            '# Welcome to Python IDE\n\nprint("Hello, World!")\nname = input("Enter your name: ")\nprint(f"Hello, {name}!")')
+        self.setStyleSheet("""
+            QMainWindow, QWidget {background-color: #1E1E1E; color: #CCCCCC;}
+            QToolBar {background-color: #2D2D2D; border: none;}
+            QSplitter::handle {background-color: #2D2D2D;}
+            QPushButton {background-color: #0E639C; color: white; padding: 5px 10px;}
+            QPushButton:hover {background-color: #1177BB;}
+        """)
+
     def _setup_auto_save(self) -> None:
         self.auto_save_timer = QTimer(self)
         self.auto_save_timer.timeout.connect(self.auto_save)
         self.auto_save_timer.start(Config.AUTO_SAVE_INTERVAL)
 
+    def set_project_directory(self) -> None:
+        dir_path = QFileDialog.getExistingDirectory(self, "Select Project Directory", self.project_dir)
+        if dir_path:
+            self.project_dir = dir_path
+            self.settings.setValue("project_dir", self.project_dir)
+            self.console.write(f"\n[Project Directory Set] {self.project_dir}\n")
+
     def run_code(self) -> None:
         if self.code_is_running:
             self.console.write("\n[Stopping previous execution...]\n")
-            self.interpreter.terminate()
-            self.interpreter.wait()
+            if self.interpreter:
+                self.interpreter.stop()
             self.code_is_running = False
-            self.run_code()
+            QTimer.singleShot(100, self.run_code)
             return
 
         self.code_is_running = True
@@ -748,6 +749,9 @@ class PythonIDE(QMainWindow):
         self.console.write("\n>>> ")
         self.run_button.setStyleSheet("background-color: green; color: white; padding: 5px 10px; border-radius: 5px;")
         self.code_is_running = False
+        if self.interpreter:
+            self.interpreter.deleteLater()
+            self.interpreter = None
 
     def new_file(self) -> None:
         self.code_editor.clear()
@@ -783,7 +787,8 @@ class PythonIDE(QMainWindow):
             self.console.write(f"\n[Save Failed] {str(e)}\n")
 
     def auto_save(self) -> None:
-        self._save_to_file(self.current_file or "autosave.py", silent=True)
+        if self.current_file and self.code_editor.document().isModified():
+            self._save_to_file(self.current_file, silent=True)
 
     def _mark_unsaved(self) -> None:
         self.save_status_dot.setStyleSheet("color: red; background-color: #2D2D2D; padding: 3px")
@@ -797,28 +802,29 @@ class PythonIDE(QMainWindow):
             self.child_windows.append(new_ide)
             new_ide.show()
         except Exception as e:
-            print(f"Failed to open new window: {e}")
+            self.console.write(f"Failed to open new window: {str(e)}\n")
 
     def find_and_replace(self) -> None:
-        self.find_replace_dialog = QDialog(self)
-        self.find_replace_dialog.setWindowTitle("Find and Replace")
-        self.find_replace_dialog.setGeometry(300, 300, 350, 150)
-        layout = QVBoxLayout(self.find_replace_dialog)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Find and Replace")
+        dialog.setGeometry(300, 300, 350, 150)
+        layout = QVBoxLayout(dialog)
 
-        self.find_input = QLineEdit()
-        self.replace_input = QLineEdit()
-        self.match_label = QLabel("Matches: 0")
-        self.match_positions: List[int] = []
-        self.current_match_index = -1
+        find_input = QLineEdit()
+        replace_input = QLineEdit()
+        match_label = QLabel("Matches: 0")
+        match_positions: List[int] = []
+        current_match_index = -1
 
         layout.addWidget(QLabel("Find:"))
-        layout.addWidget(self.find_input)
+        layout.addWidget(find_input)
         layout.addWidget(QLabel("Replace:"))
-        layout.addWidget(self.replace_input)
+        layout.addWidget(replace_input)
 
         match_layout = QHBoxLayout()
-        match_layout.addWidget(self.match_label)
-        for text, callback in [("◀", self.prev_match), ("▶", self.next_match)]:
+        match_layout.addWidget(match_label)
+        for text, callback in [("◀", lambda: self._prev_match(match_positions, match_label, find_input)),
+                               ("▶", lambda: self._next_match(match_positions, match_label, find_input))]:
             btn = QPushButton(text)
             btn.setFixedSize(30, 30)
             btn.clicked.connect(callback)
@@ -826,94 +832,84 @@ class PythonIDE(QMainWindow):
         layout.addLayout(match_layout)
 
         for text, callback in [
-            ("Find", self.find_text),
-            ("Replace", self.replace_text),
-            ("Replace All", self.replace_all_text)
+            ("Find", lambda: self._find_text(find_input, match_label, match_positions)),
+            ("Replace", lambda: self._replace_text(find_input, replace_input, match_positions, match_label)),
+            ("Replace All", lambda: self._replace_all_text(find_input, replace_input, dialog))
         ]:
             layout.addWidget(QPushButton(text, clicked=callback))
 
-        self.find_replace_dialog.exec_()
+        dialog.exec_()
 
-    def find_text(self) -> None:
-        search_text = self.find_input.text().strip()
+    def _find_text(self, find_input: QLineEdit, match_label: QLabel, match_positions: List[int]) -> None:
+        search_text = find_input.text().strip()
         if not search_text:
             return
-
         document = self.code_editor.document()
         cursor = QTextCursor(document)
-        self.match_positions.clear()
+        match_positions.clear()
         regex = QRegExp(rf'\b{re.escape(search_text)}\b')
-
         while not cursor.isNull() and not cursor.atEnd():
             cursor = document.find(regex, cursor)
             if cursor.isNull():
                 break
-            self.match_positions.append(cursor.position())
-
-        match_count = len(self.match_positions)
-        self.match_label.setText(f"Matches: {match_count}")
-        if match_count > 0:
+            match_positions.append(cursor.position())
+        match_count = len(match_positions)
+        match_label.setText(f"Matches: {match_count}")
+        if match_count:
             self.current_match_index = 0
-            self._highlight_match()
-        elif self.find_replace_dialog.isVisible():
-            self.find_replace_dialog.accept()
+            self._highlight_match(match_positions, match_label, find_input)
 
-    def _highlight_match(self) -> None:
-        if self.current_match_index >= 0 and self.match_positions:
+    def _highlight_match(self, match_positions: List[int], match_label: QLabel, find_input: QLineEdit) -> None:
+        if self.current_match_index >= 0 and match_positions:
             cursor = self.code_editor.textCursor()
-            search_len = len(self.find_input.text())
-            cursor.setPosition(self.match_positions[self.current_match_index] - search_len)
+            search_len = len(find_input.text())
+            cursor.setPosition(match_positions[self.current_match_index] - search_len)
             cursor.movePosition(QTextCursor.Right, QTextCursor.KeepAnchor, search_len)
             self.code_editor.setTextCursor(cursor)
-            self.match_label.setText(f"Matches: {len(self.match_positions)} (Current: {self.current_match_index + 1})")
+            match_label.setText(f"Matches: {len(match_positions)} (Current: {self.current_match_index + 1})")
 
-    def next_match(self) -> None:
-        if self.match_positions:
-            self.current_match_index = (self.current_match_index + 1) % len(self.match_positions)
-            self._highlight_match()
+    def _next_match(self, match_positions: List[int], match_label: QLabel, find_input: QLineEdit) -> None:
+        if match_positions:
+            self.current_match_index = (self.current_match_index + 1) % len(match_positions)
+            self._highlight_match(match_positions, match_label, find_input)
 
-    def prev_match(self) -> None:
-        if self.match_positions:
-            self.current_match_index = (self.current_match_index - 1) % len(self.match_positions)
-            self._highlight_match()
+    def _prev_match(self, match_positions: List[int], match_label: QLabel, find_input: QLineEdit) -> None:
+        if match_positions:
+            self.current_match_index = (self.current_match_index - 1) % len(match_positions)
+            self._highlight_match(match_positions, match_label, find_input)
 
-    def replace_text(self) -> None:
-        if self.current_match_index >= 0 and self.match_positions:
+    def _replace_text(self, find_input: QLineEdit, replace_input: QLineEdit, match_positions: List[int],
+                      match_label: QLabel) -> None:
+        if self.current_match_index >= 0 and match_positions:
             cursor = self.code_editor.textCursor()
-            search_text = self.find_input.text()
+            search_text = find_input.text()
             if cursor.hasSelection() and cursor.selectedText() == search_text:
-                replace_text = self.replace_input.text()
+                replace_text = replace_input.text()
                 cursor.insertText(replace_text)
-                self.match_positions[self.current_match_index] += len(replace_text) - len(search_text)
-            self.find_text()
+                match_positions[self.current_match_index] += len(replace_text) - len(search_text)
+            self._find_text(find_input, match_label, match_positions)
 
-    def replace_all_text(self) -> None:
-        search_text = self.find_input.text().strip()
-        replace_text = self.replace_input.text()
+    def _replace_all_text(self, find_input: QLineEdit, replace_input: QLineEdit, dialog: QDialog) -> None:
+        search_text = find_input.text().strip()
+        replace_text = replace_input.text()
         if not search_text:
             return
-
         document = self.code_editor.document()
         cursor = QTextCursor(document)
         cursor.beginEditBlock()
         regex = QRegExp(rf'\b{re.escape(search_text)}\b')
         cursor.movePosition(QTextCursor.Start)
-
         while True:
             cursor = document.find(regex, cursor)
             if cursor.isNull():
                 break
             cursor.insertText(replace_text)
         cursor.endEditBlock()
-        if self.find_replace_dialog.isVisible():
-            self.find_replace_dialog.accept()
+        dialog.accept()
 
     def _handle_module_error(self, module_name: str) -> None:
-        if QMessageBox.question(
-            self, "Missing Package",
-            f"Module '{module_name}' not found. Install it?",
-            QMessageBox.Yes | QMessageBox.No
-        ) == QMessageBox.Yes:
+        if QMessageBox.question(self, "Missing Package",
+                                f"Module '{module_name}' not found. Install it?") == QMessageBox.Yes:
             self.install_package(module_name)
 
     def show_package_installer(self) -> None:
@@ -923,9 +919,8 @@ class PythonIDE(QMainWindow):
 
     def show_installed_packages(self) -> None:
         try:
-            result = subprocess.run([sys.executable, "-m", "pip", "list"], capture_output=True, text=True)
+            result = subprocess.run([sys.executable, "-m", "pip", "list"], capture_output=True, text=True, check=True)
             packages = result.stdout.split("\n")[2:]
-
             dialog = QDialog(self)
             dialog.setWindowTitle("Installed Packages")
             dialog.setGeometry(200, 200, 400, 400)
@@ -946,17 +941,20 @@ class PythonIDE(QMainWindow):
 
             search_bar.textChanged.connect(
                 lambda text: [package_list.item(i).setHidden(text.lower() not in package_list.item(i).text().lower())
-                            for i in range(package_list.count())]
+                              for i in range(package_list.count())]
             )
 
-            close_btn = QPushButton("Close", clicked=dialog.accept)
-            close_btn.setStyleSheet("background-color: #0E639C; color: white; padding: 5px;")
-            layout.addWidget(close_btn)
+            layout.addWidget(QPushButton("Close", clicked=dialog.accept,
+                                         styleSheet="background-color: #0E639C; color: white; padding: 5px;"))
             dialog.exec_()
-        except Exception as e:
+        except subprocess.CalledProcessError as e:
             QMessageBox.warning(self, "Error", f"Failed to list packages: {str(e)}")
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Unexpected error: {str(e)}")
 
     def install_package(self, package_name: str) -> None:
+        if self.installer and self.installer.isRunning():
+            self.installer.stop()
         self.console.write(f"\nInstalling {package_name}...\n")
         self.installer = PackageInstaller(package_name, self.console)
         self.installer.output_ready.connect(self.console.write)
@@ -967,12 +965,82 @@ class PythonIDE(QMainWindow):
         msg = f"Package '{package_name}' {'installed successfully' if success else 'installation failed'}"
         (QMessageBox.information if success else QMessageBox.warning)(self, "Installation", msg)
         self.console.write("\n>>> ")
+        if self.installer:
+            self.installer.deleteLater()
+            self.installer = None
 
     def format_code(self) -> None:
         self.code_editor.format_code()
 
+    def closeEvent(self, event) -> None:
+        for window in self.child_windows[:]:
+            window.close()
+        self.child_windows.clear()
+
+        if hasattr(self, 'auto_save_timer'):
+            self.auto_save_timer.stop()
+            self.auto_save_timer.deleteLater()
+
+        if self.interpreter and self.interpreter.isRunning():
+            self.interpreter.stop()
+            self.interpreter = None
+
+        if self.installer and self.installer.isRunning():
+            self.installer.stop()
+            self.installer = None
+
+        if self.sidebar:
+            self.sidebar.cleanup()
+            self.sidebar = None
+
+        super().closeEvent(event)
+
+
+class Sidebar:
+    """Sidebar class managing toggle functionality"""
+
+    def __init__(self, parent: PythonIDE):
+        self.parent = parent
+        self.sidebar_visible = False
+        self.toggle_button: Optional[QPushButton] = None
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        self.toggle_button = QPushButton()
+        self.toggle_button.setIcon(QIcon("bolt.png"))  # Bolt AI icon
+        self.toggle_button.setIconSize(QSize(30, 30))
+        self.toggle_button.setFixedSize(35, 35)
+        self.toggle_button.setStyleSheet("""
+            QPushButton {background-color: #2D2D2D; color: #CCCCCC; border: none; padding: 0px; margin: 0px;}
+            QPushButton:hover {background-color: #3A3A3A;}
+        """)
+        self.toggle_button.clicked.connect(self._toggle_sidebar)
+        self.toggle_button.setToolTip("Show Bolt AI")
+
+    def _toggle_sidebar(self) -> None:
+        self.sidebar_visible = not self.sidebar_visible
+        self.parent.sidebar_content.setVisible(self.sidebar_visible)
+        self.toggle_button.setToolTip("Hide Bolt AI" if self.sidebar_visible else "Show Bolt AI")
+
+        # Adjust splitter sizes when toggling
+        splitter = self.parent.centralWidget().layout().itemAt(1).widget()
+        if self.sidebar_visible:
+            splitter.setSizes([250, splitter.sizes()[1]])  # Show sidebar with initial width
+        else:
+            splitter.setSizes([0, splitter.sizes()[1]])  # Hide sidebar
+
+    def cleanup(self) -> None:
+        if self.toggle_button:
+            self.toggle_button.deleteLater()
+            self.toggle_button = None
+
+
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    ide = PythonIDE()
-    ide.show()
-    sys.exit(app.exec_())
+    try:
+        app = QApplication(sys.argv)
+        ide = PythonIDE()
+        ide.show()
+        sys.exit(app.exec_())
+    except Exception as e:
+        print(f"Failed to start application: {str(e)}")
+        sys.exit(1)
