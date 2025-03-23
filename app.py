@@ -70,7 +70,7 @@ class HighlightRules:
         ]
 
 class PythonHighlighter(QSyntaxHighlighter):
-    """Syntax highlighter for Python code with error/warning detection"""
+    """Syntax highlighter for Python code with improved error/warning detection"""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.comment_rule = HighlightRules.get_comment_rule()
@@ -81,32 +81,53 @@ class PythonHighlighter(QSyntaxHighlighter):
         )
         self.errors: Dict[int, str] = {}  # line: message
         self.warnings: Dict[int, str] = {}  # line: message
+        self.full_code = ""  # Cache the full document text
+
+    def update_full_code(self, full_text: str) -> None:
+        """Update the cached full code and re-evaluate errors."""
+        self.full_code = full_text
+        self._check_full_syntax()
+
+    def _check_full_syntax(self) -> None:
+        """Check syntax of the entire document and map errors to lines."""
+        self.errors.clear()
+        if not self.full_code.strip():
+            return
+        try:
+            # Compile the entire document
+            compile(self.full_code, '<document>', 'exec')
+        except SyntaxError as e:
+            # Extract line number from the exception (1-based, adjust to 0-based)
+            if hasattr(e, 'lineno') and e.lineno is not None:
+                line_number = e.lineno - 1
+                self.errors[line_number] = str(e)
+        except Exception:
+            pass  # Ignore non-syntax errors here
+
+    def _check_warnings(self, text: str, line_number: int) -> None:
+        """Check for warnings in the current line."""
+        stripped_text = text.strip()
+        if not stripped_text or stripped_text.startswith('#'):
+            return
+
+        # Check for Python 2-style print (excluding strings/comments)
+        if (re.search(r'\bprint\s+[^("]', text) and
+            not re.search(r'["\'].*print\s+[^("].*["\']', text)):
+            self.warnings[line_number] = "Old-style print statement (use print())"
+
+        # Check for wildcard imports
+        if re.search(r'^\s*from\s+\w+\s+import\s+\*', text):
+            self.warnings[line_number] = "Wildcard import detected (avoid 'from ... import *')"
 
     def highlightBlock(self, text: str) -> None:
         line_number = self.currentBlock().blockNumber()
-        self.errors.pop(line_number, None)
-        self.warnings.pop(line_number, None)
+        self.warnings.pop(line_number, None)  # Clear previous warnings for this line
 
-        # Syntax checking
-        if text.strip() and not text.strip().startswith('#'):
-            try:
-                compile(text, '<string>', 'exec')  # Basic syntax check
-            except SyntaxError as e:
-                self.errors[line_number] = str(e)
-            except Exception as e:
-                self.warnings[line_number] = f"Potential issue: {str(e)}"
-
-            # Warning checks
-            if "print " in text:  # Python 2 style print
-                self.warnings[line_number] = "Old-style print statement"
-            if re.search(r'^\s*import\s+\*', text):
-                self.warnings[line_number] = "Wildcard import detected"
-
-        # Apply highlighting
+        # Apply highlighting rules
         index = self.comment_rule[0].indexIn(text)
         if index >= 0:
             self.setFormat(index, len(text) - index, self.comment_rule[1])
-            return
+            return  # Skip further processing for comments
         for pattern, format_ in self.rules:
             index = pattern.indexIn(text)
             while index >= 0:
@@ -114,7 +135,10 @@ class PythonHighlighter(QSyntaxHighlighter):
                 self.setFormat(index, length, format_)
                 index = pattern.indexIn(text, index + length)
 
-        # Highlight errors and warnings
+        # Check warnings independently
+        self._check_warnings(text, line_number)
+
+        # Apply error/warning formatting (errors updated via full document check)
         if line_number in self.errors:
             error_format = QTextCharFormat()
             error_format.setUnderlineStyle(QTextCharFormat.WaveUnderline)
@@ -226,6 +250,8 @@ class CodeEditor(QPlainTextEdit):
         )
         self.update_error_warning_count()
         self._setup_autocomplete()
+
+
 
     def _setup_ui(self) -> None:
         font = QFont(Config.EDITOR_FONT, Config.FONT_SIZE)
@@ -467,6 +493,8 @@ class CodeEditor(QPlainTextEdit):
             self.viewport().width() - self.error_warning_label.width() - 10,
             5
         )
+
+
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
