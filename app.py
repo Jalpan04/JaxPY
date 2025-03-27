@@ -9,11 +9,9 @@ import builtins
 from typing import List, Tuple, Dict, Set, Optional
 
 from PyQt5 import QtCore
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRegExp, QSize, QTimer, QRect, QSettings, QPropertyAnimation
-from PyQt5.QtGui import (
-    QColor, QTextCharFormat, QFont, QPalette, QSyntaxHighlighter,
-    QTextCursor, QIcon, QPainter, QTextFormat
-)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QRegExp, QSize, QTimer, QRect, QSettings
+from PyQt5.QtGui import QColor, QTextCharFormat, QFont, QPalette, QSyntaxHighlighter, QTextCursor, QIcon, QPainter, \
+    QTextFormat
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QSplitter, QTextEdit, QPlainTextEdit, QFileDialog, QDialog,
@@ -21,28 +19,30 @@ from PyQt5.QtWidgets import (
     QAction, QToolBar, QToolButton, QMenu, QCompleter, QListWidget, QListWidgetItem, QSizePolicy
 )
 
-from bolt_ai import BoltAI
+from bolt_ai import BoltAI  # Assuming this is an external dependency
+
 
 class Config:
     """Centralized configuration constants"""
+    COLORS = {
+        "background": "#1E1F22",
+        "secondary_bg": "#353535",
+        "text": "#D4D4D4",
+        "accent": "#ECDC51",
+        "secondary_accent": "#FFC61A",
+        "line_number_bg": "#2A2B2E",
+        "line_number_fg": "#8A8A8A",
+        "error": "#FF5555",
+        "warning": "#FFC107",
+        "keyword": "#569CD6",
+        "string": "#CE9178",
+        "comment": "#6A9955",
+        "number": "#B5CEA8",
+        "function": "#DCDCAA",
+        "operator": "#D4D4D4"
+    }
     EDITOR_FONT = "Consolas"
     FONT_SIZE = 12
-    BACKGROUND_COLOR = "#1E1F22"
-    SECONDARY_BG = "#353535"
-    TEXT_COLOR = "#D4D4D4"
-    ACCENT_COLOR = "#ECDC51"
-    SECONDARY_ACCENT = "#FFC61A"
-    LINE_NUMBER_BG = "#2A2B2E"
-    LINE_NUMBER_FG = "#8A8A8A"
-    ERROR_COLOR = "#FF5555"
-    WARNING_COLOR = "#FFC107"
-    # New colors for syntax highlighting
-    KEYWORD_COLOR = "#569CD6"  # Blue
-    STRING_COLOR = "#CE9178"  # Peach
-    COMMENT_COLOR = "#6A9955"  # Green
-    NUMBER_COLOR = "#B5CEA8"  # Light green
-    FUNCTION_COLOR = "#DCDCAA"  # Light yellow
-    OPERATOR_COLOR = "#D4D4D4"  # White
     AUTO_SAVE_INTERVAL = 30000
     PYTHON_BUILTINS = dir(builtins)
     COMMON_IMPORTS = [
@@ -52,6 +52,7 @@ class Config:
     ]
     AUTOCOMPLETE_TRIGGERS = [".", "im"]
     DEFAULT_PROJECT_DIR = os.getcwd()
+
     BUTTON_STYLE = """
         QToolButton {
             background-color: #353535;
@@ -64,21 +65,19 @@ class Config:
             font-size: 18px;
             min-width: 80px;
             min-height: 20px;
-            transition: all 0.2s;
         }
         QToolButton:hover {
             background-color: #FFC61A;
             color: #1E1F22;
             border-color: #ECDC51;
-            box-shadow: 0 0 8px rgba(236, 220, 81, 0.5);
         }
         QToolButton:pressed {
             background-color: #ECDC51;
             color: #1E1F22;
             border-color: #FFC61A;
-            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
         }
     """
+
     RUN_BUTTON_RUNNING_STYLE = """
         QToolButton {
             background-color: #75FB4C;
@@ -97,83 +96,76 @@ class Config:
             box-shadow: 0 0 8px rgba(236, 220, 81, 0.5);
         }
     """
+
+    RUN_BUTTON_NOT_RUNNING_STYLE = """
+        QToolButton {
+            background-color: #353535;
+            color: #00CC00;
+            border: 1px solid #00CC00;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-family: Consolas;
+            font-weight: 600;
+            font-size: 18px;
+            min-width: 20px;
+            min-height: 20px;
+        }
+        QToolButton:hover {
+            background-color: #00CC00;
+            color: #1E1F22;
+            border-color: #66FF66;
+        }
+        QToolButton:pressed {
+            background-color: #009900;
+            color: #1E1F22;
+            border-color: #00CC00;
+        }
+    """
+
     STOP_BUTTON_STYLE = """
-            QToolButton {
-                background-color: #353535;
-                color: #FF5555;
-                border: 1px solid #FF5555;
-                padding: 6px 12px;
-                border-radius: 6px;
-                font-family: Consolas;
-                font-weight: 600;
-                min-width: 20px;
-                min-height: 20px;
-                transition: all 0.2s;
-            }
-            QToolButton:hover {
-                background-color: #FF5555;
-                color: #1E1F22;
-                box-shadow: 0 0 8px rgba(255, 85, 85, 0.5);
-            }
-            QToolButton:pressed {
-                background-color: #CC4444;
-                color: #1E1F22;
-                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
-            }
-        """
+        QToolButton {
+            background-color: #353535;
+            color: #FF5555;
+            border: 1px solid #FF5555;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-family: Consolas;
+            font-weight: 600;
+            min-width: 20px;
+            min-height: 20px;
+        }
+        QToolButton:hover {
+            background-color: #FF5555;
+            color: #1E1F22;
+        }
+        QToolButton:pressed {
+            background-color: #CC4444;
+            color: #1E1F22;
+        }
+    """
+
     BOLT_BUTTON_STYLE = """
         QPushButton {
             background-color: #353535;
             color: #ECDC51;
             border: 1px solid #FFC61A;
-            padding: 8px;  /* Increased padding for larger appearance */
-            border-radius: 8px;  /* Slightly larger radius */
-            transition: all 0.3s;  /* Slightly longer transition for smoothness */
+            padding: 8px;
+            border-radius: 8px;
         }
         QPushButton:hover {
             background-color: #FFC61A;
             color: #1E1F22;
             border-color: #ECDC51;
-            box-shadow: 0 0 12px rgba(236, 220, 81, 0.7);  /* Brighter, larger glow */
-            transform: scale(1.05);  /* Slight size increase on hover */
         }
         QPushButton:pressed {
             background-color: #ECDC51;
             color: #1E1F22;
             border-color: #FFC61A;
-            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
         }
     """
-    RUN_BUTTON_NOT_RUNNING_STYLE = """
-            QToolButton {
-                background-color: #353535;
-                color: #00CC00;  /* Green text to match the play icon */
-                border: 1px solid #00CC00;
-                padding: 6px 12px;
-                border-radius: 6px;
-                font-family: Consolas;
-                font-weight: 600;
-                font-size: 18px;
-                min-width: 20px;
-                min-height: 20px;
-                transition: all 0.2s;
-            }
-            QToolButton:hover {
-                background-color: #00CC00;
-                color: #1E1F22;
-                border-color: #66FF66;
-                box-shadow: 0 0 8px rgba(0, 204, 0, 0.5);
-            }
-            QToolButton:pressed {
-                background-color: #009900;
-                color: #1E1F22;
-                border-color: #00CC00;
-                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
-            }
-        """
 
 class HighlightRules:
-    """Static syntax highlighting rules with colorful formatting"""
+    """Static syntax highlighting rules"""
     _formats: Dict[str, QTextCharFormat] = {}
 
     @classmethod
@@ -189,38 +181,19 @@ class HighlightRules:
 
     @classmethod
     def get_rules(cls) -> List[Tuple[QRegExp, QTextCharFormat]]:
-        rules = []
-
-        # Keywords
-        keyword_format = cls._create_format(Config.KEYWORD_COLOR, bold=True)
-        keywords = '|'.join(r'\b' + kw + r'\b' for kw in keyword.kwlist)
-        rules.append((QRegExp(keywords), keyword_format))
-
-        # Strings (single and double quotes)
-        string_format = cls._create_format(Config.STRING_COLOR)
-        rules.append((QRegExp(r'"[^"\\]*(\\.[^"\\]*)*"'), string_format))  # Double-quoted
-        rules.append((QRegExp(r"'[^'\\]*(\\.[^'\\]*)*'"), string_format))  # Single-quoted
-
-        # Comments
-        comment_format = cls._create_format(Config.COMMENT_COLOR)
-        rules.append((QRegExp(r'#[^\n]*'), comment_format))
-
-        # Numbers (integers and floats)
-        number_format = cls._create_format(Config.NUMBER_COLOR)
-        rules.append((QRegExp(r'\b[0-9]+\.?[0-9]*\b'), number_format))
-
-        # Operators
-        operator_format = cls._create_format(Config.OPERATOR_COLOR)
-        rules.append((QRegExp(r'[\+\-\*/=<>!&|%^]+'), operator_format))
-
-        # Function names (after def keyword)
-        function_format = cls._create_format(Config.FUNCTION_COLOR)
-        rules.append((QRegExp(r'def\s+(\w+)\s*\('), function_format))
-
-        return rules
+        return [
+            (QRegExp('|'.join(r'\b' + kw + r'\b' for kw in keyword.kwlist)),
+             cls._create_format(Config.COLORS["keyword"], True)),
+            (QRegExp(r'"[^"\\]*(\\.[^"\\]*)*"'), cls._create_format(Config.COLORS["string"])),
+            (QRegExp(r"'[^'\\]*(\\.[^'\\]*)*'"), cls._create_format(Config.COLORS["string"])),
+            (QRegExp(r'#[^\n]*'), cls._create_format(Config.COLORS["comment"])),
+            (QRegExp(r'\b[0-9]+\.?[0-9]*\b'), cls._create_format(Config.COLORS["number"])),
+            (QRegExp(r'[\+\-\*/=<>!&|%^]+'), cls._create_format(Config.COLORS["operator"])),
+            (QRegExp(r'def\s+(\w+)\s*\('), cls._create_format(Config.COLORS["function"]))
+        ]
 
 class PythonHighlighter(QSyntaxHighlighter):
-    """Efficient Python syntax highlighter with colorful formatting"""
+    """Efficient Python syntax highlighter"""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.rules = HighlightRules.get_rules()
@@ -235,67 +208,58 @@ class PythonHighlighter(QSyntaxHighlighter):
             self.rehighlight()
 
     def _check_full_syntax(self) -> None:
+        self.errors.clear()
         if not self._last_text.strip():
-            self.errors.clear()
             return
         try:
             compile(self._last_text, '<document>', 'exec')
-            self.errors.clear()  # Only clear if compilation succeeds
-        except SyntaxError as e:
-            if hasattr(e, 'lineno') and e.lineno is not None:
-                self.errors[e.lineno - 1] = str(e)
-        except IndentationError as e:
+        except (SyntaxError, IndentationError) as e:
             if hasattr(e, 'lineno') and e.lineno is not None:
                 self.errors[e.lineno - 1] = str(e)
         except Exception as e:
-            # Catch other compilation-related errors
-            self.errors[0] = f"General compilation error: {str(e)}"  # Default to line 0 if no line number
+            self.errors[0] = f"General error: {str(e)}"
 
     def _check_warnings(self, text: str, line_number: int) -> None:
         self.warnings.pop(line_number, None)
         stripped = text.strip()
         if not stripped or stripped.startswith('#'):
             return
-        if re.search(r'\bprint\s+[^(\n]', text) and not stripped.startswith('print('):
-            self.warnings[line_number] = "Old-style print statement (use print())"
-        elif re.search(r'^\s*from\s+\w+\s+import\s+\*', text):
-            self.warnings[line_number] = "Wildcard import detected (avoid 'from ... import *')"
-        elif re.search(r'^\s*import\s+\w+$', text) and not re.search(rf'{text.split()[-1]}\.', self._last_text):
-            self.warnings[line_number] = "Potentially unused import"
-        elif re.search(r'^(def|class|if|for|while)\s+\w+$', text):
-            self.warnings[line_number] = "Missing colon after statement"
+        warning_patterns = [
+            (r'\bprint\s+[^(\n]', "Old-style print statement"),
+            (r'^\s*from\s+\w+\s+import\s+\*', "Wildcard import detected"),
+            (r'^(def|class|if|for|while)\s+\w+$', "Missing colon")
+        ]
+        for pattern, msg in warning_patterns:
+            if re.search(pattern, text):
+                self.warnings[line_number] = msg
+                break
 
     def highlightBlock(self, text: str) -> None:
-        # Apply syntax highlighting rules
         for pattern, fmt in self.rules:
-            expression = QRegExp(pattern)
-            index = expression.indexIn(text)
+            index = pattern.indexIn(text)
             while index >= 0:
-                length = expression.matchedLength()
-                # Special handling for function names after 'def'
+                length = pattern.matchedLength()
                 if pattern.pattern().startswith('def\\s+'):
-                    func_name = expression.capturedTexts()[1]  # Capture group 1 is the function name
-                    func_index = index + 4  # Skip 'def '
-                    func_length = len(func_name)
+                    func_index = index + 4
+                    func_length = len(pattern.capturedTexts()[1])
                     self.setFormat(func_index, func_length, fmt)
                 else:
                     self.setFormat(index, length, fmt)
-                index = expression.indexIn(text, index + length)
+                index = pattern.indexIn(text, index + length)
 
-        # Apply error/warning underlines (overlays on top of syntax coloring)
         line_number = self.currentBlock().blockNumber()
         self._check_warnings(text, line_number)
         if line_number in self.errors:
-            fmt = HighlightRules._create_format(Config.ERROR_COLOR)
+            fmt = HighlightRules._create_format(Config.COLORS["error"])
             fmt.setUnderlineStyle(QTextCharFormat.WaveUnderline)
             self.setFormat(0, len(text), fmt)
         elif line_number in self.warnings:
-            fmt = HighlightRules._create_format(Config.WARNING_COLOR)
+            fmt = HighlightRules._create_format(Config.COLORS["warning"])
             fmt.setUnderlineStyle(QTextCharFormat.DashWaveUnderline)
             self.setFormat(0, len(text), fmt)
 
 class LineNumberArea(QWidget):
-    """Optimized line number area with left-aligned numbers"""
+    """Optimized line number area"""
     def __init__(self, editor):
         super().__init__(editor)
         self.editor = editor
@@ -307,14 +271,14 @@ class LineNumberArea(QWidget):
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
-        painter.fillRect(event.rect(), QColor(Config.LINE_NUMBER_BG))
+        painter.fillRect(event.rect(), QColor(Config.COLORS["line_number_bg"]))
         block = self.editor.firstVisibleBlock()
         top = int(self.editor.blockBoundingGeometry(block).translated(self.editor.contentOffset()).top())
 
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible():
                 block_num = block.blockNumber()
-                painter.setPen(QColor(Config.LINE_NUMBER_FG))
+                painter.setPen(QColor(Config.COLORS["line_number_fg"]))
                 painter.drawText(
                     QRect(5, top, self.width() - 5, self.editor.fontMetrics().height()),
                     Qt.AlignLeft, str(block_num + 1)
@@ -323,7 +287,7 @@ class LineNumberArea(QWidget):
                     fold_type = self.editor.fold_types.get(block_num, "other")
                     base_color = {"def": "#52585C", "class": "#61686D"}.get(fold_type, "#71797E")
                     painter.setPen(
-                        QColor(base_color if block_num != self.hovered_line else Config.SECONDARY_ACCENT))
+                        QColor(base_color if block_num != self.hovered_line else Config.COLORS["secondary_accent"]))
                     arrow = "▼" if block_num not in self.editor.folded_blocks else "▶"
                     painter.drawText(
                         QRect(self.width() - 20, top, 15, self.editor.fontMetrics().height()),
@@ -349,37 +313,37 @@ class LineNumberArea(QWidget):
             self.editor.toggle_fold(block.blockNumber())
 
 class CodeEditor(QPlainTextEdit):
-    """Optimized code editor with folding and autocomplete"""
-
+    """Optimized code editor"""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.ide_parent = parent if isinstance(parent, PythonIDE) else None  # Store PythonIDE reference
+        self.ide_parent = parent if isinstance(parent, PythonIDE) else None
         self.line_number_area = LineNumberArea(self)
         self.highlighter = PythonHighlighter(self.document())
         self.foldable_lines: Set[int] = set()
         self.folded_blocks: Set[int] = set()
         self.fold_ranges: Dict[int, int] = {}
         self.fold_types: Dict[int, str] = {}
+        self.completer = None
+        self._autocomplete_active = False
         self._setup_ui()
         self._setup_autocomplete()
-        self._autocomplete_active = False
 
     def _setup_ui(self) -> None:
         font = QFont(Config.EDITOR_FONT, Config.FONT_SIZE)
         font.setFixedPitch(True)
         self.setFont(font)
         palette = QPalette()
-        palette.setColor(QPalette.Base, QColor(Config.BACKGROUND_COLOR))
-        palette.setColor(QPalette.Text, QColor(Config.TEXT_COLOR))
+        palette.setColor(QPalette.Base, QColor(Config.COLORS["background"]))
+        palette.setColor(QPalette.Text, QColor(Config.COLORS["text"]))
         self.setPalette(palette)
-        self.setStyleSheet("""
-            QPlainTextEdit {
-                border: 1px solid #353535;
+        self.setStyleSheet(f"""
+            QPlainTextEdit {{
+                border: 1px solid {Config.COLORS["secondary_bg"]};
                 border-radius: 6px;
                 padding: 4px;
-                selection-background-color: #FFC61A;
-                selection-color: #1E1F22;
-            }
+                selection-background-color: {Config.COLORS["secondary_accent"]};
+                selection-color: {Config.COLORS["background"]};
+            }}
         """)
         self.setTabStopWidth(self.fontMetrics().width(' ') * 4)
         self.blockCountChanged.connect(self.update_line_number_area_width)
@@ -391,7 +355,8 @@ class CodeEditor(QPlainTextEdit):
     def _on_text_changed(self) -> None:
         self.highlighter.update_full_code(self.toPlainText())
         self.detect_foldable_lines()
-        self.update_error_warning_count()
+        if self.ide_parent:
+            self.ide_parent.update_error_warning_count()
 
     def line_number_area_width(self) -> int:
         return 40 + self.fontMetrics().width('9') * max(1, len(str(self.blockCount())))
@@ -412,7 +377,7 @@ class CodeEditor(QPlainTextEdit):
     def highlight_current_line(self) -> None:
         if not self.isReadOnly():
             selection = QTextEdit.ExtraSelection()
-            selection.format.setBackground(QColor("#2A2B2E"))
+            selection.format.setBackground(QColor(Config.COLORS["line_number_bg"]))
             selection.format.setProperty(QTextFormat.FullWidthSelection, True)
             selection.cursor = self.textCursor()
             selection.cursor.clearSelection()
@@ -428,13 +393,13 @@ class CodeEditor(QPlainTextEdit):
         while block.isValid():
             text = block.text().rstrip()
             if text:
-                current_indent = len(block.text()) - len(block.text().lstrip())
+                current_indent = len(text) - len(text.lstrip())
                 current_line = block.blockNumber()
                 while indent_stack and indent_stack[-1][1] >= current_indent:
                     start_line, _, block_type = indent_stack.pop()
                     if current_line - start_line > 1:
                         self._add_foldable(start_line, current_line - 1, block_type)
-                if text.startswith(("def ", "class ", "if ", "for ", "while ", "try:", "with ")):
+                if re.match(r'^(def|class|if|for|while|try:|with\s+)', text):
                     block_type = "def" if text.startswith("def ") else "class" if text.startswith("class ") else "other"
                     indent_stack.append((current_line, current_indent, block_type))
             block = block.next()
@@ -453,7 +418,10 @@ class CodeEditor(QPlainTextEdit):
         if line_number not in self.fold_ranges:
             return
         is_folding = line_number not in self.folded_blocks
-        self.folded_blocks.add(line_number) if is_folding else self.folded_blocks.discard(line_number)
+        if is_folding:
+            self.folded_blocks.add(line_number)
+        else:
+            self.folded_blocks.discard(line_number)
         document = self.document()
         with self._disable_updates():
             block = document.findBlockByNumber(line_number + 1)
@@ -486,23 +454,21 @@ class CodeEditor(QPlainTextEdit):
         self.completer.activated.connect(self.insert_completion)
         self.completer.popup().setStyleSheet(f"""
             QListView {{ 
-                background-color: #353535; 
-                color: #D4D4D4; 
-                border: 1px solid #FFC61A;
+                background-color: {Config.COLORS["secondary_bg"]}; 
+                color: {Config.COLORS["text"]}; 
+                border: 1px solid {Config.COLORS["secondary_accent"]};
                 border-radius: 4px;
                 padding: 2px;
-                font-family: Consolas;
+                font-family: {Config.EDITOR_FONT};
             }}
-            QListView::item {{ 
-                padding: 4px 8px;
-            }}
+            QListView::item {{ padding: 4px 8px; }}
             QListView::item:hover {{ 
-                background-color: #ECDC51; 
-                color: #1E1F22; 
+                background-color: {Config.COLORS["accent"]}; 
+                color: {Config.COLORS["background"]}; 
             }}
             QListView::item:selected {{
-                background-color: #FFC61A;
-                color: #1E1F22;
+                background-color: {Config.COLORS["secondary_accent"]};
+                color: {Config.COLORS["background"]};
             }}
         """)
 
@@ -515,7 +481,7 @@ class CodeEditor(QPlainTextEdit):
         self.setTextCursor(cursor)
 
     def show_autocomplete(self) -> None:
-        if self._autocomplete_active:
+        if self._autocomplete_active or not self.completer:
             return
         self._autocomplete_active = True
         try:
@@ -542,7 +508,7 @@ class CodeEditor(QPlainTextEdit):
             self._autocomplete_active = False
 
     def keyPressEvent(self, event) -> None:
-        if self.completer.popup().isVisible():
+        if self.completer and self.completer.popup().isVisible():
             if event.key() in (Qt.Key_Enter, Qt.Key_Return, Qt.Key_Tab):
                 self.insert_completion(self.completer.currentCompletion())
                 return
@@ -575,42 +541,31 @@ class CodeEditor(QPlainTextEdit):
             self.setPlainText(formatted)
             self.document().setModified(False)
         except ImportError:
-            pass
+            if self.ide_parent:
+                self.ide_parent.console.write("Black formatter not installed\n")
         except Exception as e:
-            if hasattr(self, 'parent') and hasattr(self.parent(), 'console'):
-                self.parent().console.write(f"Error formatting code: {str(e)}\n")
+            if self.ide_parent:
+                self.ide_parent.console.write(f"Error formatting code: {str(e)}\n")
 
     def dragEnterEvent(self, event) -> None:
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
 
     def dropEvent(self, event) -> None:
-        parent = self.parent()
+        if not self.ide_parent:
+            return
         for url in event.mimeData().urls():
             file_path = url.toLocalFile()
             if file_path.endswith('.py'):
                 try:
                     with open(file_path, 'r', encoding="utf-8") as f:
                         self.setPlainText(f.read())
-                    parent.current_file = file_path
-                    parent._mark_saved()
-                    parent.console.write(f"\n[Opened] {file_path}\n")
+                    self.ide_parent.current_file = file_path
+                    self.ide_parent._mark_saved()
+                    self.ide_parent.console.write(f"\n[Opened] {file_path}\n")
                 except Exception as e:
-                    parent.console.write(f"Error opening file: {str(e)}\n")
+                    self.ide_parent.console.write(f"Error opening file: {str(e)}\n")
         event.acceptProposedAction()
-
-    def update_error_warning_count(self) -> None:
-        errors, warnings = len(self.highlighter.errors), len(self.highlighter.warnings)
-        if self.ide_parent:
-            self.ide_parent.error_count_label.setText(f"{errors}")
-            self.ide_parent.warning_count_label.setText(f"{warnings}")
-            self.ide_parent.error_count_label.update()
-            self.ide_parent.warning_count_label.update()
-        else:
-            print(f"Warning: No valid PythonIDE reference, cannot update error/warning counts")
-
-    def paintEvent(self, event) -> None:
-        super().paintEvent(event)
 
 class ConsoleWidget(QTextEdit):
     """Efficient console widget"""
@@ -626,17 +581,17 @@ class ConsoleWidget(QTextEdit):
         font.setFixedPitch(True)
         self.setFont(font)
         palette = QPalette()
-        palette.setColor(QPalette.Base, QColor(Config.BACKGROUND_COLOR))
-        palette.setColor(QPalette.Text, QColor(Config.TEXT_COLOR))
+        palette.setColor(QPalette.Base, QColor(Config.COLORS["background"]))
+        palette.setColor(QPalette.Text, QColor(Config.COLORS["text"]))
         self.setPalette(palette)
-        self.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #353535;
+        self.setStyleSheet(f"""
+            QTextEdit {{
+                border: 1px solid {Config.COLORS["secondary_bg"]};
                 border-radius: 6px;
                 padding: 4px;
-                selection-background-color: #FFC61A;
-                selection-color: #1E1F22;
-            }
+                selection-background-color: {Config.COLORS["secondary_accent"]};
+                selection-color: {Config.COLORS["background"]};
+            }}
         """)
         self.setReadOnly(True)
 
@@ -724,9 +679,6 @@ class PythonInterpreter(QThread):
         self.terminate()
         self.wait()
 
-    def __del__(self):
-        self.stop()
-
 class PackageInstaller(QThread):
     """Thread for installing packages"""
     output_ready = pyqtSignal(str)
@@ -764,11 +716,8 @@ class PackageInstaller(QThread):
         self.terminate()
         self.wait()
 
-    def __del__(self):
-        self.stop()
-
 class PythonIDE(QMainWindow):
-    """Main IDE window with editor, fixed toolbar, and resizable components"""
+    """Main IDE window"""
     def __init__(self):
         super().__init__()
         self.current_file: Optional[str] = None
@@ -789,13 +738,13 @@ class PythonIDE(QMainWindow):
 
         toolbar = QToolBar()
         toolbar.setMovable(False)
-        toolbar.setStyleSheet("""
-            QToolBar {
-                background: #1E1F22;
-                border-bottom: 1px solid #FFC61A;
+        toolbar.setStyleSheet(f"""
+            QToolBar {{
+                background: {Config.COLORS["background"]};
+                border-bottom: 1px solid {Config.COLORS["secondary_accent"]};
                 padding: 4px;
                 spacing: 6px;
-            }
+            }}
         """)
         self.addToolBar(Qt.TopToolBarArea, toolbar)
 
@@ -804,7 +753,6 @@ class PythonIDE(QMainWindow):
         logo_label.setStyleSheet("padding: 4px; border: none;")
         toolbar.addWidget(logo_label)
 
-        # Toolbar buttons all as QToolButton with uniform style
         button_specs = [
             ("File", None, None, True, [
                 ("New", self.new_file),
@@ -832,19 +780,18 @@ class PythonIDE(QMainWindow):
                 menu = QMenu(self)
                 menu.setStyleSheet(f"""
                     QMenu {{
-                        background-color: #353535;
-                        color: #D4D4D4;
-                        border: 1px solid #FFC61A;
+                        background-color: {Config.COLORS["secondary_bg"]};
+                        color: {Config.COLORS["text"]};
+                        border: 1px solid {Config.COLORS["secondary_accent"]};
                         border-radius: 4px;
                         padding: 4px;
                     }}
                     QMenu::item {{
                         padding: 6px 12px;
-                        background-color: transparent;
                     }}
                     QMenu::item:selected {{
-                        background-color: #ECDC51;
-                        color: #1E1F22;
+                        background-color: {Config.COLORS["accent"]};
+                        color: {Config.COLORS["background"]};
                     }}
                 """)
                 for menu_text, menu_callback in menu_items:
@@ -863,7 +810,7 @@ class PythonIDE(QMainWindow):
         self.run_button.setIconSize(QSize(24, 24))
         self.run_button.setShortcut("F5")
         self.run_button.clicked.connect(self.run_code)
-        self.run_button.setStyleSheet(Config.RUN_BUTTON_NOT_RUNNING_STYLE)
+        self.run_button.setStyleSheet(Config.RUN_BUTTON_NOT_RUNNING_STYLE)  # Fixed reference
         self.run_button.setToolTip("Run Code (F5)")
         toolbar.addWidget(self.run_button)
 
@@ -871,7 +818,7 @@ class PythonIDE(QMainWindow):
         self.stop_button.setIcon(QIcon("images/stop.png"))
         self.stop_button.setIconSize(QSize(24, 24))
         self.stop_button.clicked.connect(self.stop_code)
-        self.stop_button.setStyleSheet(Config.STOP_BUTTON_STYLE)
+        self.stop_button.setStyleSheet(Config.STOP_BUTTON_STYLE)  # Fixed reference
         self.stop_button.setToolTip("Stop Code")
         toolbar.addWidget(self.stop_button)
 
@@ -893,7 +840,7 @@ class PythonIDE(QMainWindow):
         self.error_icon_label = QLabel()
         self.error_icon_label.setPixmap(QIcon("images/error.png").pixmap(24, 24))
         self.error_icon_label.setStyleSheet(f"""
-            background: #353535;
+            background: {Config.COLORS["secondary_bg"]};
             padding: 4px;
             border-radius: 4px;
         """)
@@ -902,17 +849,17 @@ class PythonIDE(QMainWindow):
 
         self.error_count_label = QLabel("0")
         self.error_count_label.setStyleSheet(f"""
-            color: {Config.ERROR_COLOR};
-            background: #353535;
+            color: {Config.COLORS["error"]};
+            background: {Config.COLORS["secondary_bg"]};
             padding: 4px 8px;
-            font-family: Consolas;
+            font-family: {Config.EDITOR_FONT};
         """)
         toggle_layout.addWidget(self.error_count_label)
 
         self.warning_icon_label = QLabel()
         self.warning_icon_label.setPixmap(QIcon("images/warning.png").pixmap(24, 24))
         self.warning_icon_label.setStyleSheet(f"""
-            background: #353535;
+            background: {Config.COLORS["secondary_bg"]};
             padding: 4px;
             border-radius: 4px;
         """)
@@ -921,30 +868,30 @@ class PythonIDE(QMainWindow):
 
         self.warning_count_label = QLabel("0")
         self.warning_count_label.setStyleSheet(f"""
-            color: {Config.WARNING_COLOR};
-            background: #353535;
+            color: {Config.COLORS["warning"]};
+            background: {Config.COLORS["secondary_bg"]};
             padding: 4px 8px;
-            font-family: Consolas;
+            font-family: {Config.EDITOR_FONT};
         """)
         toggle_layout.addWidget(self.warning_count_label)
 
         toggle_container.setFixedHeight(55)
-        toggle_container.setStyleSheet("""
-            background: #353535;
-            border-bottom: 1px solid #FFC61A;
+        toggle_container.setStyleSheet(f"""
+            background: {Config.COLORS["secondary_bg"]};
+            border-bottom: 1px solid {Config.COLORS["secondary_accent"]};
             border-radius: 6px 6px 0 0;
         """)
         main_layout.addWidget(toggle_container)
 
         content_splitter = QSplitter(Qt.Horizontal)
-        content_splitter.setStyleSheet("""
-            QSplitter::handle {
-                background: #353535;
+        content_splitter.setStyleSheet(f"""
+            QSplitter::handle {{
+                background: {Config.COLORS["secondary_bg"]};
                 width: 4px;
-            }
-            QSplitter::handle:hover {
-                background: #FFC61A;
-            }
+            }}
+            QSplitter::多元handle:hover {{
+                background: {Config.COLORS["secondary_accent"]};
+            }}
         """)
         self.sidebar_content = QWidget()
         sidebar_layout = QVBoxLayout(self.sidebar_content)
@@ -956,14 +903,14 @@ class PythonIDE(QMainWindow):
         content_splitter.addWidget(self.sidebar_content)
 
         editor_console_splitter = QSplitter(Qt.Vertical)
-        editor_console_splitter.setStyleSheet("""
-            QSplitter::handle {
-                background: #353535;
+        editor_console_splitter.setStyleSheet(f"""
+            QSplitter::handle {{
+                background: {Config.COLORS["secondary_bg"]};
                 height: 4px;
-            }
-            QSplitter::handle:hover {
-                background: #FFC61A;
-            }
+            }}
+            QSplitter::handle:hover {{
+                background: {Config.COLORS["secondary_accent"]};
+            }}
         """)
         self.code_editor = CodeEditor(self)
         self.code_editor.textChanged.connect(self._mark_unsaved)
@@ -977,16 +924,15 @@ class PythonIDE(QMainWindow):
 
         terminal_label = QLabel(" Terminal")
         terminal_label.setStyleSheet(f"""
-            color: {Config.ACCENT_COLOR};
+            color: {Config.COLORS["accent"]};
             background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 #353535, stop:1 #2A2B2E);
+                stop:0 {Config.COLORS["secondary_bg"]}, stop:1 {Config.COLORS["line_number_bg"]});
             padding: 6px 12px;
-            border: 1px solid #FFC61A;
+            border: 1px solid {Config.COLORS["secondary_accent"]};
             border-radius: 6px;
             font-weight: 600;
-            font-family: Consolas;
+            font-family: {Config.EDITOR_FONT};
             font-size: 16px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         """)
         terminal_label.setToolTip("Terminal Output")
         header.addWidget(terminal_label)
@@ -995,13 +941,13 @@ class PythonIDE(QMainWindow):
 
         self.save_status_dot = QLabel("✗")
         self.save_status_dot.setStyleSheet(f"""
-            color: #FF5555;
-            background: #353535;
+            color: {Config.COLORS["error"]};
+            background: {Config.COLORS["secondary_bg"]};
             padding: 4px 8px;
-            border: 1px solid #353535;
+            border: 1px solid {Config.COLORS["secondary_bg"]};
             border-radius: 4px;
             font-size: 14px;
-            font-family: Consolas;
+            font-family: {Config.EDITOR_FONT};
         """)
         self.save_status_dot.setToolTip("File has unsaved changes")
         header.addWidget(self.save_status_dot)
@@ -1021,42 +967,41 @@ class PythonIDE(QMainWindow):
             '# Welcome to JaxPY\n\nprint("Hello, World!")\nname = input("Enter your name: ")\nprint(f"Hello, {name}!")')
         self.setStyleSheet(f"""
             QMainWindow, QWidget {{
-                background: {Config.BACKGROUND_COLOR};
-                color: {Config.TEXT_COLOR};
+                background: {Config.COLORS["background"]};
+                color: {Config.COLORS["text"]};
             }}
             QScrollBar:vertical, QScrollBar:horizontal {{
                 border: none;
-                background: #2A2B2E;
+                background: {Config.COLORS["line_number_bg"]};
                 width: 10px;
                 height: 10px;
                 margin: 0;
             }}
             QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
-                background: #353535;
+                background: {Config.COLORS["secondary_bg"]};
                 border-radius: 5px;
             }}
             QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {{
-                background: #FFC61A;
+                background: {Config.COLORS["secondary_accent"]};
             }}
             QScrollBar::add-line, QScrollBar::sub-line {{
                 background: none;
             }}
             QMessageBox, QDialog {{
-                background: {Config.BACKGROUND_COLOR};
-                color: {Config.TEXT_COLOR};
-                border: 1px solid #353535;
+                background: {Config.COLORS["background"]};
+                color: {Config.COLORS["text"]};
+                border: 1px solid {Config.COLORS["secondary_bg"]};
                 border-radius: 6px;
             }}
             QLineEdit {{
-                background: #2A2B2E;
-                color: {Config.TEXT_COLOR};
-                border: 1px solid #353535;
+                background: {Config.COLORS["line_number_bg"]};
+                color: {Config.COLORS["text"]};
+                border: 1px solid {Config.COLORS["secondary_bg"]};
                 padding: 6px;
                 border-radius: 4px;
             }}
             QLineEdit:focus {{
-                border-color: #FFC61A;
-                box-shadow: 0 0 4px rgba(255, 198, 26, 0.5);
+                border-color: {Config.COLORS["secondary_accent"]};
             }}
         """)
 
@@ -1074,13 +1019,13 @@ class PythonIDE(QMainWindow):
 
     def run_code(self) -> None:
         if self.code_is_running:
-            self.console.write("\n[Execution already in progress. Stop it first.]\n")
+            self.console.write("\n[Execution already in progress]\n")
             return
 
         self.code_is_running = True
         self.run_button.setEnabled(False)
         self.run_button.setIcon(QIcon("images/run.png"))
-        self.run_button.setStyleSheet(Config.RUN_BUTTON_RUNNING_STYLE)
+        self.run_button.setStyleSheet(Config.RUN_BUTTON_RUNNING_STYLE)  # Fixed reference
         self.console.clear()
 
         self.interpreter = PythonInterpreter(self.code_editor.toPlainText(), self.console)
@@ -1090,7 +1035,7 @@ class PythonIDE(QMainWindow):
 
     def stop_code(self) -> None:
         if not self.code_is_running:
-            self.console.write("\n[No execution to stop.]\n")
+            self.console.write("\n[No execution to stop]\n")
             return
 
         if self.interpreter and self.interpreter.isRunning():
@@ -1106,7 +1051,7 @@ class PythonIDE(QMainWindow):
         self.code_is_running = False
         self.run_button.setEnabled(True)
         self.run_button.setIcon(QIcon("images/play_green.png"))
-        self.run_button.setStyleSheet(Config.RUN_BUTTON_NOT_RUNNING_STYLE)
+        self.run_button.setStyleSheet(Config.RUN_BUTTON_NOT_RUNNING_STYLE)  # Fixed reference
         if self.interpreter:
             self.interpreter.deleteLater()
             self.interpreter = None
@@ -1158,22 +1103,22 @@ class PythonIDE(QMainWindow):
     def _mark_unsaved(self) -> None:
         self.save_status_dot.setPixmap(QIcon("images/unsaved.png").pixmap(16, 16))
         self.save_status_dot.setStyleSheet(f"""
-            background: #353535;
+            color: {Config.COLORS["error"]};
+            background: {Config.COLORS["secondary_bg"]};
             padding: 4px 8px;
-            border: 1px solid #FF5555;
+            border: 1px solid {Config.COLORS["error"]};
             border-radius: 4px;
-            box-shadow: 0 0 4px rgba(255, 85, 85, 0.3);
         """)
         self.save_status_dot.setToolTip("File has unsaved changes")
 
     def _mark_saved(self) -> None:
         self.save_status_dot.setPixmap(QIcon("images/saved.png").pixmap(16, 16))
         self.save_status_dot.setStyleSheet(f"""
-            background: #353535;
+            color: {Config.COLORS["accent"]};
+            background: {Config.COLORS["secondary_bg"]};
             padding: 4px 8px;
-            border: 1px solid {Config.ACCENT_COLOR};
+            border: 1px solid {Config.COLORS["accent"]};
             border-radius: 4px;
-            box-shadow: 0 0 4px rgba(236, 220, 81, 0.3);
         """)
         self.save_status_dot.setToolTip("File is saved")
 
@@ -1189,38 +1134,37 @@ class PythonIDE(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle("Find and Replace")
         dialog.setGeometry(300, 300, 350, 150)
-        dialog.setStyleSheet(f"background-color: {Config.BACKGROUND_COLOR};")
         layout = QVBoxLayout(dialog)
         layout.setSpacing(6)
 
         find_input = QLineEdit()
         replace_input = QLineEdit()
         find_input.setStyleSheet(f"""
-            background-color: #2A2B2E;
-            color: {Config.TEXT_COLOR};
+            background-color: {Config.COLORS["line_number_bg"]};
+            color: {Config.COLORS["text"]};
             padding: 6px;
-            border: 1px solid #353535;
+            border: 1px solid {Config.COLORS["secondary_bg"]};
             border-radius: 4px;
         """)
         replace_input.setStyleSheet(f"""
-            background-color: #2A2B2E;
-            color: {Config.TEXT_COLOR};
+            background-color: {Config.COLORS["line_number_bg"]};
+            color: {Config.COLORS["text"]};
             padding: 6px;
-            border: 1px solid #353535;
+            border: 1px solid {Config.COLORS["secondary_bg"]};
             border-radius: 4px;
         """)
         match_label = QLabel("Matches: 0")
         match_label.setStyleSheet(f"""
-            color: {Config.ACCENT_COLOR};
-            font-family: Consolas;
+            color: {Config.COLORS["accent"]};
+            font-family: {Config.EDITOR_FONT};
             padding: 4px;
         """)
         match_positions: List[int] = []
         self.current_match_index = -1
 
-        layout.addWidget(QLabel("Find:", styleSheet=f"color: {Config.TEXT_COLOR}; font-family: Consolas;"))
+        layout.addWidget(QLabel("Find:", styleSheet=f"color: {Config.COLORS["text"]}; font-family: {Config.EDITOR_FONT};"))
         layout.addWidget(find_input)
-        layout.addWidget(QLabel("Replace:", styleSheet=f"color: {Config.TEXT_COLOR}; font-family: Consolas;"))
+        layout.addWidget(QLabel("Replace:", styleSheet=f"color: {Config.COLORS["text"]}; font-family: {Config.EDITOR_FONT};"))
         layout.addWidget(replace_input)
 
         match_layout = QHBoxLayout()
@@ -1325,17 +1269,16 @@ class PythonIDE(QMainWindow):
             dialog = QDialog(self)
             dialog.setWindowTitle("Installed Packages")
             dialog.setGeometry(200, 200, 400, 400)
-            dialog.setStyleSheet(f"background-color: {Config.BACKGROUND_COLOR}; color: {Config.TEXT_COLOR};")
             layout = QVBoxLayout(dialog)
             layout.setSpacing(6)
 
             search_bar = QLineEdit()
             search_bar.setPlaceholderText("Search packages...")
             search_bar.setStyleSheet(f"""
-                background-color: #2A2B2E;
-                color: {Config.TEXT_COLOR};
+                background-color: {Config.COLORS["line_number_bg"]};
+                color: {Config.COLORS["text"]};
                 padding: 6px;
-                border: 1px solid #353535;
+                border: 1px solid {Config.COLORS["secondary_bg"]};
                 border-radius: 4px;
             """)
             layout.addWidget(search_bar)
@@ -1343,9 +1286,9 @@ class PythonIDE(QMainWindow):
             package_list = QListWidget()
             package_list.setStyleSheet(f"""
                 QListWidget {{
-                    background-color: #2A2B2E;
-                    color: {Config.TEXT_COLOR};
-                    border: 1px solid #353535;
+                    background-color: {Config.COLORS["line_number_bg"]};
+                    color: {Config.COLORS["text"]};
+                    border: 1px solid {Config.COLORS["secondary_bg"]};
                     border-radius: 4px;
                     padding: 4px;
                 }}
@@ -1353,11 +1296,11 @@ class PythonIDE(QMainWindow):
                     padding: 6px;
                 }}
                 QListWidget::item:hover {{
-                    background-color: #353535;
+                    background-color: {Config.COLORS["secondary_bg"]};
                 }}
                 QListWidget::item:selected {{
-                    background-color: #ECDC51;
-                    color: #1E1F22;
+                    background-color: {Config.COLORS["accent"]};
+                    color: {Config.COLORS["background"]};
                 }}
             """)
             for pkg in packages:
@@ -1378,8 +1321,6 @@ class PythonIDE(QMainWindow):
             dialog.exec_()
         except subprocess.CalledProcessError as e:
             QMessageBox.warning(self, "Error", f"Failed to list packages: {str(e)}")
-        except Exception as e:
-            QMessageBox.warning(self, "Error", f"Unexpected error: {str(e)}")
 
     def install_package(self, package_name: str) -> None:
         if self.installer and self.installer.isRunning():
@@ -1401,6 +1342,11 @@ class PythonIDE(QMainWindow):
     def format_code(self) -> None:
         self.code_editor.format_code()
 
+    def update_error_warning_count(self) -> None:
+        errors, warnings = len(self.code_editor.highlighter.errors), len(self.code_editor.highlighter.warnings)
+        self.error_count_label.setText(f"{errors}")
+        self.warning_count_label.setText(f"{warnings}")
+
     def closeEvent(self, event) -> None:
         for window in self.child_windows[:]:
             window.close()
@@ -1412,20 +1358,17 @@ class PythonIDE(QMainWindow):
 
         if self.interpreter and self.interpreter.isRunning():
             self.interpreter.stop()
-            self.interpreter = None
 
         if self.installer and self.installer.isRunning():
             self.installer.stop()
-            self.installer = None
 
         if self.sidebar:
             self.sidebar.cleanup()
-            self.sidebar = None
 
         super().closeEvent(event)
 
 class Sidebar:
-    """Sidebar class managing toggle functionality with 1:2 split"""
+    """Sidebar class managing toggle functionality"""
     def __init__(self, parent: PythonIDE):
         self.parent = parent
         self.sidebar_visible = False
@@ -1435,40 +1378,18 @@ class Sidebar:
     def _setup_ui(self) -> None:
         self.toggle_button = QPushButton()
         self.toggle_button.setIcon(QIcon("images/bolt.png"))
-        self.toggle_button.setFixedSize(45, 45)  # Increase from 35x35 to 45x45
-        self.toggle_button.setIconSize(QSize(40, 40))  # Increase from 30x30 to 40x40
+        self.toggle_button.setFixedSize(45, 45)
+        self.toggle_button.setIconSize(QSize(40, 40))
         self.toggle_button.setStyleSheet(Config.BOLT_BUTTON_STYLE)
         self.toggle_button.clicked.connect(self._toggle_sidebar)
         self.toggle_button.setToolTip("Show Bolt AI")
 
     def _toggle_sidebar(self) -> None:
-        # Toggle visibility state
         self.sidebar_visible = not self.sidebar_visible
-
-        # Get the splitter widget
         splitter = self.parent.centralWidget().layout().itemAt(1).widget()
-
-        # Show/hide sidebar content
         self.parent.sidebar_content.setVisible(self.sidebar_visible)
         self.toggle_button.setToolTip("Hide Bolt AI" if self.sidebar_visible else "Show Bolt AI")
-
-        # Set initial sizes when showing, but allow user resizing
-        if self.sidebar_visible:
-            total_width = splitter.width()
-            sidebar_width = total_width // 3  # Initial width (1/3 of total)
-            editor_width = (total_width * 2) // 3  # Initial editor width (2/3 of total)
-            splitter.setSizes([sidebar_width, editor_width])
-        else:
-            splitter.setSizes([0, splitter.width()])
-
-        # Optional: Remove or adjust animation if you want to keep it
-        # Without animation, the splitter will handle resizing naturally
-        # If you want to keep animation:
-        animation = QPropertyAnimation(self.parent.sidebar_content, b"minimumWidth")
-        animation.setDuration(300)
-        animation.setStartValue(0 if self.sidebar_visible else 250)
-        animation.setEndValue(250 if self.sidebar_visible else 0)
-        animation.start()
+        splitter.setSizes([250 if self.sidebar_visible else 0, splitter.width()])
 
     def cleanup(self) -> None:
         if self.toggle_button:
