@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JaxPY - Python IDE for Innovators</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --primary-color: #ECDC51;
+      --secondary-color: #FFC61A;
+      --background-dark: #1E1F22;
+      --background-medium: #353535;
+      --text-light: #D4D4D4;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Inter', 'Arial', sans-serif;
+    }
+
+    @keyframes gradientFlow {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-50px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    body {
+      background-color: var(--background-dark);
+      color: var(--text-light);
+      line-height: 1.6;
+      background: linear-gradient(45deg, var(--background-dark), var(--background-medium), #2A2B2E);
+      background-size: 200% 200%;
+      animation: gradientFlow 15s ease infinite;
+      scroll-behavior: smooth;
+      overflow-x: hidden;
+    }
+
+    /* Header Styles */
+    header {
+      background: rgb(0, 0, 0);
+      padding: 15px 50px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid var(--primary-color);
+      backdrop-filter: blur(15px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    header img {
+      height: 60px;
+      transition: all 0.5s ease;
+    }
+
+    header img:hover {
+      transform: rotate(360deg) scale(1.1);
+    }
+
+    nav ul {
+      list-style: none;
+      display: flex;
+      gap: 30px;
+    }
+
+    nav ul li a {
+      color: var(--primary-color);
+      text-decoration: none;
+      font-weight: bold;
+      position: relative;
+      transition: all 0.3s ease;
+      padding: 5px 10px;
+      border-radius: 5px;
+    }
+
+    nav ul li a:hover {
+      color: var(--secondary-color);
+      background: rgba(236, 220, 81, 0.1);
+    }
+
+    /* Sections with Distinct Styling */
+    section {
+      padding: 80px 50px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    section::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, rgba(53, 53, 53, 0.2), transparent 50%);
+      z-index: -1;
+      opacity: 0.5;
+    }
+
+    /* Hero Section */
+    .hero {
+      text-align: center;
+      min-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      animation: fadeInUp 1.5s ease;
+      background: radial-gradient(circle at center, rgba(53, 53, 53, 0.3), transparent 70%);
+    }
+
+    .hero h1 {
+      font-size: 4rem;
+      color: var(--primary-color);
+      margin-bottom: 20px;
+      text-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      animation: slideIn 1s ease;
+    }
+
+    .hero p {
+      font-size: 1.5rem;
+      max-width: 700px;
+      margin: 0 auto 30px;
+      opacity: 0.9;
+      animation: slideIn 1.2s ease;
+    }
+
+    .hero .btn {
+      background-color: var(--primary-color);
+      color: var(--background-dark);
+      padding: 15px 30px;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: bold;
+      transition: all 0.4s ease;
+      display: inline-block;
+      position: relative;
+      overflow: hidden;
+      animation: pulse 2s infinite;
+    }
+
+    .hero .btn:hover {
+      background-color: var(--secondary-color);
+      transform: scale(1.1);
+      box-shadow: 0 15px 25px rgba(0,0,0,0.3);
+    }
+
+    /* Features Section */
+    .features {
+      background-color: rgba(42, 43, 46, 0.6);
+      backdrop-filter: blur(10px);
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 30px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .feature-card {
+      background: rgba(53, 53, 53, 0.7);
+      padding: 25px;
+      border-radius: 10px;
+      border: 1px solid var(--primary-color);
+      transition: all 0.4s ease;
+      backdrop-filter: blur(15px);
+      box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-10px);
+      box-shadow: 0 20px 30px rgba(0,0,0,0.3);
+    }
+
+    .feature-card h3 {
+      color: var(--primary-color);
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+    }
+
+    .feature-card h3 i {
+      margin-right: 15px;
+      color: var(--secondary-color);
+    }
+
+    /* About Section */
+    .about {
+      background-color: rgba(30, 31, 34, 0.8);
+      backdrop-filter: blur(15px);
+      text-align: center;
+    }
+
+    .about h2 {
+      font-size: 2.5rem;
+      color: var(--primary-color);
+      margin-bottom: 30px;
+      text-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+
+    .about p {
+      max-width: 900px;
+      margin: 20px auto;
+      line-height: 1.8;
+      opacity: 0.9;
+    }
+
+    /* USP Section Styles */
+    .usp-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 50px 20px;
+      background-color: rgba(30, 31, 34, 0.8);
+      backdrop-filter: blur(15px);
+    }
+
+    .usp-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 30px;
+    }
+
+    .usp-card {
+      background: rgba(53, 53, 53, 0.7);
+      border-radius: 15px;
+      padding: 30px;
+      border: 1px solid var(--primary-color);
+      backdrop-filter: blur(15px);
+      transition: all 0.4s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .usp-card:hover {
+      transform: translateY(-10px);
+      box-shadow: 0 20px 30px rgba(0,0,0,0.3);
+    }
+
+    .usp-card::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(
+              circle at center,
+              rgba(236, 220, 81, 0.1),
+              transparent 70%
+      );
+      transform: rotate(-45deg);
+      opacity: 0;
+      transition: opacity 0.4s ease;
+    }
+
+    .usp-card:hover::before {
+      opacity: 1;
+    }
+
+    .usp-card-icon {
+      font-size: 3rem;
+      color: var(--primary-color);
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: center;
+      transition: transform 0.3s ease;
+    }
+
+    .usp-card:hover .usp-card-icon {
+      transform: scale(1.1) rotate(10deg);
+    }
+
+    .usp-card h3 {
+      color: var(--primary-color);
+      text-align: center;
+      margin-bottom: 15px;
+      font-size: 1.5rem;
+    }
+
+    .usp-card p {
+      text-align: center;
+      opacity: 0.9;
+    }
+
+    .future-roadmap {
+      margin-top: 50px;
+      text-align: center;
+    }
+
+    .future-roadmap h2 {
+      color: var(--primary-color);
+      font-size: 2.5rem;
+      margin-bottom: 30px;
+    }
+
+    .timeline {
+      position: relative;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 50px 0;
+    }
+
+    .timeline::before {
+      content: '';
+      position: absolute;
+      width: 4px;
+      background: linear-gradient(to bottom, transparent, var(--primary-color), transparent);
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      margin-left: -2px;
+    }
+
+    .timeline-item {
+      padding: 20px;
+      position: relative;
+      width: 50%;
+      opacity: 0;
+      transform: translateY(50px);
+      transition: all 0.6s ease;
+    }
+
+    .timeline-item:nth-child(even) {
+      align-self: flex-end;
+      left: 50%;
+    }
+
+    .timeline-item:nth-child(odd) {
+      align-self: flex-start;
+      left: 0;
+    }
+
+    .timeline-item.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .timeline-content {
+      background: rgba(53, 53, 53, 0.7);
+      border-radius: 10px;
+      padding: 20px;
+      position: relative;
+      border: 1px solid var(--primary-color);
+      backdrop-filter: blur(10px);
+    }
+
+    .timeline-year {
+      position: absolute;
+      top: -15px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--primary-color);
+      color: var(--background-dark);
+      padding: 5px 15px;
+      border-radius: 20px;
+      font-weight: bold;
+    }
+
+    /* Footer */
+    footer {
+      background: rgba(53, 53, 53, 0.9);
+      padding: 25px;
+      text-align: center;
+      border-top: 2px solid var(--primary-color);
+      backdrop-filter: blur(15px);
+    }
+
+    footer p {
+      font-size: 0.9rem;
+    }
+
+    footer a {
+      color: var(--primary-color);
+      text-decoration: none;
+      transition: color 0.3s ease;
+    }
+
+    footer a:hover {
+      color: var(--secondary-color);
+    }
+
+    /* Scroll Animation */
+    section {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: opacity 0.8s ease, transform 0.8s ease;
+    }
+
+    section.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+<!-- Header -->
+<header>
+  <img src="jaxpy.png" alt="JaxPY Logo">
+  <nav>
+    <ul>
+      <li><a href="#home">Home</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#about">About</a></li>
+      <li><a href="#usp">USP</a></li>
+    </ul>
+  </nav>
+</header>
+
+<!-- Hero Section -->
+<section id="home" class="hero">
+  <h1>Welcome to JaxPY</h1>
+  <p>A powerful, lightweight Python IDE designed for developers and innovators.</p>
+  <a href="#" class="btn">Download Now</a>
+</section>
+
+<!-- Features Section -->
+<section id="features" class="features">
+  <h2 class="text-center mb-5">Key Features</h2>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <h3><i class="fas fa-code"></i>Syntax Highlighting</h3>
+      <p>Advanced Python syntax highlighting with error and warning detection.</p>
+    </div>
+    <div class="feature-card">
+      <h3><i class="fas fa-indent"></i>Code Folding</h3>
+      <p>Organize your code with intuitive folding for functions and classes.</p>
+    </div>
+    <div class="feature-card">
+      <h3><i class="fas fa-terminal"></i>Built-in Terminal</h3>
+      <p>Run and debug your Python scripts directly within the IDE.</p>
+    </div>
+    <div class="feature-card">
+      <h3><i class="fas fa-box-open"></i>Package Management</h3>
+      <p>Easily install and manage Python packages with a few clicks.</p>
+    </div>
+    <div class="feature-card">
+      <h3><i class="fas fa-magic"></i>Auto-Completion</h3>
+      <p>Speed up coding with smart auto-completion for Python builtins and imports.</p>
+    </div>
+    <div class="feature-card">
+      <h3><i class="fas fa-brain"></i>Bolt AI Integration</h3>
+      <p>Leverage AI assistance for coding tasks and debugging.</p>
+    </div>
+  </div>
+</section>
+
+<!-- About Section -->
+<section id="about" class="about">
+  <h2>About JaxPY</h2>
+  <p>
+    JaxPY is a modern Python Integrated Development Environment (IDE) built to streamline coding workflows.
+    Created with passion and precision, it combines essential tools like syntax highlighting, code folding,
+    and a built-in terminal with innovative features like Bolt AI integration. Whether you're a beginner or
+    an experienced developer, JaxPY empowers you to write, test, and debug Python code efficiently.
+    Presented at the Project Expo 2025, JaxPY is designed to inspire innovation and creativity.
+  </p>
+</section>
+
+<!-- USP and Future Roadmap Section -->
+<section id="usp" class="usp-container">
+  <div class="usp-grid">
+    <div class="usp-card">
+      <div class="usp-card-icon">
+        <i class="fas fa-bullseye"></i>
+      </div>
+      <h3>Core Aim</h3>
+      <p>Provide a seamless, intuitive coding experience for Python developers of all skill levels, bridging the gap between complexity and creativity.</p>
+    </div>
+    <div class="usp-card">
+      <div class="usp-card-icon">
+        <i class="fas fa-star"></i>
+      </div>
+      <h3>Unique Selling Proposition</h3>
+      <p>JaxPY combines powerful features with an unparalleled user interface, making it the ultimate IDE for both beginners and seasoned developers.</p>
+    </div>
+    <div class="usp-card">
+      <div class="usp-card-icon">
+        <i class="fas fa-rocket"></i>
+      </div>
+      <h3>Key Benefits</h3>
+      <p>Streamlined workflow, integrated AI assistance, and productivity-boosting tools that transform the way you write and manage Python code.</p>
+    </div>
+  </div>
+
+  <div class="future-roadmap">
+    <h2>Future Roadmap</h2>
+    <div class="timeline">
+      <div class="timeline-item">
+        <div class="timeline-content">
+          <div class="timeline-year">1</div>
+          <h3>AI-Powered Coding Assistant</h3>
+          <p>Enhance Bolt AI integration with advanced code suggestion and automated debugging capabilities.</p>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-content">
+          <div class="timeline-year">2</div>
+          <h3>Multi-Language Support</h3>
+          <p>Expand beyond Python to support JavaScript, TypeScript, and other popular programming languages.</p>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-content">
+          <div class="timeline-year">3</div>
+          <h3>Cloud Collaboration</h3>
+          <p>Introduce real-time collaborative coding features and cloud-based project management.</p>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-content">
+          <div class="timeline-year">4</div>
+          <h3>Advanced Machine Learning Tools</h3>
+          <p>Integrate specialized tools for data science and machine learning project development.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <p>&copy; 2025 JaxPY | Created by Jalpan Vyas | <a href="#">Contact - 202307020048@karnavatiuniversity.edu.in</a></p>
+</footer>
+
+<script>
+  // Scroll Animation for Sections
+  const observerOptions = {
+    root: null,
+    rootMargin: '0px',
+    threshold: 0.1
+  };
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+      }
+    });
+  }, observerOptions);
+
+  const sections = document.querySelectorAll('section');
+  sections.forEach(section => {
+    observer.observe(section);
+  });
+
+  // Timeline Visibility Animation
+  const timelineItems = document.querySelectorAll('.timeline-item');
+  const timelineObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+      }
+    });
+  }, observerOptions);
+
+  timelineItems.forEach(item => {
+    timelineObserver.observe(item);
+  });
+</script>
+</body>
+</html>
