@@ -1,5 +1,7 @@
 # JaxPY - Python IDE for Innovators
 
+![GitHub top language](https://img.shields.io/github/languages/top/Jalpan04/JaxPY) ![GitHub repo size](https://img.shields.io/github/repo-size/Jalpan04/JaxPY) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 JaxPY is a modern, lightweight Python Integrated Development Environment (IDE) built using Python and PyQt5. Designed to streamline coding workflows, it combines essential editing capabilities, a built-in terminal, package management, and sidecar AI assistance to deliver a premium developer experience.
 
 ## Features
